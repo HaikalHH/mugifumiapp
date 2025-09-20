@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "../../../../lib/prisma";
+import { withRetry, createErrorResponse, logRouteStart, logRouteComplete } from "../../../../lib/db-utils";
 
 export async function GET(req: NextRequest) {
   try {
@@ -9,6 +10,9 @@ export async function GET(req: NextRequest) {
     const location = searchParams.get("location") || undefined;
     const outlet = searchParams.get("outlet") || undefined;
 
+    logRouteStart('reports-menu-items', { from, to, location, outlet });
+
+    // Build sale filter
     const whereSale: any = {};
     if (location) whereSale.location = location;
     if (outlet) whereSale.outlet = outlet;
@@ -18,13 +22,46 @@ export async function GET(req: NextRequest) {
       if (to) whereSale.orderDate.lte = new Date(to);
     }
 
-    // Get all sale items with product information
-    const saleItems = await prisma.saleItem.findMany({
-      where: {
-        sale: whereSale,
-      },
-      include: {
-        product: {
+    // Get sale items with manual joins for better performance
+    const saleItems = await withRetry(async () => {
+      return prisma.saleItem.findMany({
+        where: {
+          sale: whereSale,
+        },
+        select: {
+          id: true,
+          barcode: true,
+          price: true,
+          status: true,
+          productId: true,
+          saleId: true,
+        },
+        orderBy: { id: 'desc' }
+      });
+    }, 2, 'reports-menu-items-sale-items');
+
+    if (saleItems.length === 0) {
+      return NextResponse.json({
+        menuItems: [],
+        totals: {
+          totalItems: 0,
+          totalRevenue: 0,
+          totalHppValue: 0,
+          totalProfit: 0,
+          uniqueProducts: 0,
+        },
+      });
+    }
+
+    // Get unique product and sale IDs
+    const productIds = [...new Set(saleItems.map(item => item.productId))];
+    const saleIds = [...new Set(saleItems.map(item => item.saleId))];
+
+    // Get products and sales data separately
+    const [products, sales] = await Promise.all([
+      withRetry(async () => {
+        return prisma.product.findMany({
+          where: { id: { in: productIds } },
           select: {
             id: true,
             code: true,
@@ -32,34 +69,44 @@ export async function GET(req: NextRequest) {
             price: true,
             hppPct: true,
           },
-        },
-        sale: {
+          orderBy: { id: 'asc' }
+        });
+      }, 2, 'reports-menu-items-products'),
+      withRetry(async () => {
+        return prisma.sale.findMany({
+          where: { id: { in: saleIds } },
           select: {
+            id: true,
             outlet: true,
             location: true,
             orderDate: true,
           },
-        },
-      },
-      orderBy: {
-        sale: {
-          orderDate: "desc",
-        },
-      },
-    });
+          orderBy: { id: 'asc' }
+        });
+      }, 2, 'reports-menu-items-sales')
+    ]);
+
+    // Create lookup maps
+    const productMap = new Map(products.map(p => [p.id, p]));
+    const saleMap = new Map(sales.map(s => [s.id, s]));
 
     // Group by product and calculate totals
     const menuItemsMap = new Map();
     
     for (const item of saleItems) {
-      const productKey = `${item.product.code} - ${item.product.name}`;
+      const product = productMap.get(item.productId);
+      const sale = saleMap.get(item.saleId);
+      
+      if (!product || !sale) continue; // Skip if data not found
+      
+      const productKey = `${product.code} - ${product.name}`;
       
       if (!menuItemsMap.has(productKey)) {
         menuItemsMap.set(productKey, {
-          productCode: item.product.code,
-          productName: item.product.name,
-          productPrice: item.product.price,
-          hppPct: item.product.hppPct,
+          productCode: product.code,
+          productName: product.name,
+          productPrice: product.price,
+          hppPct: product.hppPct,
           totalQuantity: 0,
           totalRevenue: 0,
           totalHppValue: 0,
@@ -72,15 +119,15 @@ export async function GET(req: NextRequest) {
       const menuItem = menuItemsMap.get(productKey);
       menuItem.totalQuantity += 1;
       menuItem.totalRevenue += item.price;
-      menuItem.totalHppValue += Math.round(item.price * item.product.hppPct);
-      menuItem.outlets.add(item.sale.outlet);
-      menuItem.locations.add(item.sale.location);
+      menuItem.totalHppValue += Math.round(item.price * product.hppPct);
+      menuItem.outlets.add(sale.outlet);
+      menuItem.locations.add(sale.location);
       menuItem.sales.push({
         barcode: item.barcode,
         price: item.price,
-        outlet: item.sale.outlet,
-        location: item.sale.location,
-        orderDate: item.sale.orderDate,
+        outlet: sale.outlet,
+        location: sale.location,
+        orderDate: sale.orderDate,
         status: item.status,
       });
     }
@@ -103,12 +150,15 @@ export async function GET(req: NextRequest) {
       uniqueProducts: menuItems.length,
     };
 
+    logRouteComplete('reports-menu-items', menuItems.length);
     return NextResponse.json({
       menuItems,
       totals,
     });
-  } catch (e) {
-    console.error("Menu items report error:", e);
-    return NextResponse.json({ error: "Failed to build menu items report" }, { status: 500 });
+  } catch (error) {
+    return NextResponse.json(
+      createErrorResponse("build menu items report", error), 
+      { status: 500 }
+    );
   }
 }

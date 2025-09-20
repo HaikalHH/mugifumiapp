@@ -1,14 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "../../../../lib/prisma";
 import { parseBarcode } from "../../../../lib/barcode";
+import { withRetry, createErrorResponse, logRouteStart, logRouteComplete } from "../../../../lib/db-utils";
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const { barcode, location } = body as { barcode: string; location: string };
+    
     if (!barcode || !location) {
       return NextResponse.json({ error: "barcode and location are required" }, { status: 400 });
     }
+
+    logRouteStart('inventory-in', { barcode, location });
 
     const parsed = parseBarcode(barcode);
     if (!parsed) {
@@ -16,25 +20,45 @@ export async function POST(req: NextRequest) {
     }
 
     // Map to master code (e.g., HOK-L, HOK-R, BRW)
-    const product = await prisma.product.findUnique({ where: { code: parsed.masterCode } });
+    const product = await withRetry(async () => {
+      return prisma.product.findUnique({ 
+        where: { code: parsed.masterCode },
+        select: { id: true, code: true, name: true }
+      });
+    }, 2, 'inventory-in-product');
+    
     if (!product) {
       return NextResponse.json({ error: "Product not found for barcode" }, { status: 404 });
     }
 
-    const created = await prisma.inventory.create({
-      data: {
-        barcode: parsed.raw,
-        location,
-        productId: product.id,
-      },
-    });
+    const created = await withRetry(async () => {
+      return prisma.inventory.create({
+        data: {
+          barcode: parsed.raw,
+          location,
+          productId: product.id,
+        },
+        select: {
+          id: true,
+          barcode: true,
+          location: true,
+          status: true,
+          productId: true,
+          createdAt: true
+        }
+      });
+    }, 2, 'inventory-in-create');
 
+    logRouteComplete('inventory-in', 1);
     return NextResponse.json(created, { status: 201 });
   } catch (error: any) {
     if (error?.code === "P2002") {
       return NextResponse.json({ error: "Barcode already exists in inventory" }, { status: 409 });
     }
-    return NextResponse.json({ error: "Failed to add inventory" }, { status: 500 });
+    return NextResponse.json(
+      createErrorResponse("add inventory", error), 
+      { status: 500 }
+    );
   }
 }
 

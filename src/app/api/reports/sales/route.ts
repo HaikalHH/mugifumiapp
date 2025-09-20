@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "../../../../lib/prisma";
+import { withRetry, createErrorResponse, logRouteStart, logRouteComplete } from "../../../../lib/db-utils";
 
 export async function GET(req: NextRequest) {
   try {
@@ -8,6 +9,8 @@ export async function GET(req: NextRequest) {
     const to = searchParams.get("to");
     const location = searchParams.get("location") || undefined;
     const outlet = searchParams.get("outlet") || undefined;
+
+    logRouteStart('reports-sales', { from, to, location, outlet });
 
     const whereSale: any = {};
     if (location) whereSale.location = location;
@@ -18,11 +21,50 @@ export async function GET(req: NextRequest) {
       if (to) whereSale.orderDate.lte = new Date(to);
     }
 
-    const sales = await prisma.sale.findMany({
-      where: whereSale,
-      include: { items: true },
-      orderBy: { orderDate: "desc" },
-    });
+    // Use manual joins for better performance
+    const sales = await withRetry(async () => {
+      return prisma.sale.findMany({
+        where: whereSale,
+        select: {
+          id: true,
+          outlet: true,
+          location: true,
+          orderDate: true,
+          discount: true,
+          estPayout: true,
+          actPayout: true
+        },
+        orderBy: { id: 'desc' }
+      });
+    }, 2, 'reports-sales-sales');
+
+    if (sales.length === 0) {
+      return NextResponse.json({ byOutlet: {}, totalActual: 0, avgPotonganPct: null, sales: [] });
+    }
+
+    // Get sale items separately
+    const saleIds = sales.map(s => s.id);
+    const items = await withRetry(async () => {
+      return prisma.saleItem.findMany({
+        where: { saleId: { in: saleIds } },
+        select: {
+          id: true,
+          saleId: true,
+          price: true,
+          status: true
+        },
+        orderBy: { id: 'asc' }
+      });
+    }, 2, 'reports-sales-items');
+
+    // Group items by saleId
+    const itemsBySale = new Map();
+    for (const item of items) {
+      if (!itemsBySale.has(item.saleId)) {
+        itemsBySale.set(item.saleId, []);
+      }
+      itemsBySale.get(item.saleId).push(item);
+    }
 
     const needsDiscount = (ot: string) => {
       const k = ot.toLowerCase();
@@ -30,10 +72,11 @@ export async function GET(req: NextRequest) {
     };
 
     const perSale = sales.map((s) => {
+      const saleItems = itemsBySale.get(s.id) || [];
       const isCafe = s.outlet.toLowerCase() === "cafe";
       // For Cafe, only count items with status 'Terjual' toward calculations
-      const effectiveItems = isCafe ? s.items.filter((it) => (it.status || "").toLowerCase() === "terjual") : s.items;
-      const preDiscountSubtotal = effectiveItems.reduce((acc, it) => acc + it.price, 0);
+      const effectiveItems = isCafe ? saleItems.filter((it: any) => (it.status || "").toLowerCase() === "terjual") : saleItems;
+      const preDiscountSubtotal = effectiveItems.reduce((acc: number, it: any) => acc + it.price, 0);
       const discountPct = needsDiscount(s.outlet) && typeof s.discount === "number" ? s.discount : 0;
       const discountedSubtotal = Math.round(preDiscountSubtotal * (1 - (discountPct || 0) / 100));
 
@@ -67,7 +110,7 @@ export async function GET(req: NextRequest) {
         potongan,
         potonganPct,
         originalBeforeDiscount: preDiscountSubtotal,
-        itemsCount: s.items.length,
+        itemsCount: saleItems.length,
       };
     });
 
@@ -96,9 +139,14 @@ export async function GET(req: NextRequest) {
       ])
     );
     const avgPotonganPct = totalOriginal > 0 ? Math.round(((totalPotongan / totalOriginal) * 100) * 10) / 10 : null;
+    
+    logRouteComplete('reports-sales', perSale.length);
     return NextResponse.json({ byOutlet: out, totalActual, avgPotonganPct, sales: perSale });
-  } catch (e) {
-    return NextResponse.json({ error: "Failed to build sales report" }, { status: 500 });
+  } catch (error) {
+    return NextResponse.json(
+      createErrorResponse("build sales report", error), 
+      { status: 500 }
+    );
   }
 }
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "../../../../lib/prisma";
+import { withRetry, createErrorResponse, logRouteStart, logRouteComplete } from "../../../../lib/db-utils";
 
 export async function GET(req: NextRequest) {
   try {
@@ -12,36 +13,113 @@ export async function GET(req: NextRequest) {
     const limit = parseInt(searchParams.get("limit") || "10");
     const skip = (page - 1) * limit;
 
-    const where = {
+    logRouteStart('inventory-list', { location, productCode, search, status, page, limit });
+
+    // Build where clause for inventory
+    const inventoryWhere = {
       location: location,
-      product: productCode ? { code: productCode } : undefined,
-      // MySQL provider here does not support mode on StringFilter; use case-sensitive contains
-      // If case-insensitive needed, consider lowercasing both sides or using full-text indexes
       barcode: search ? { contains: search } : undefined,
       status: status || undefined,
     };
 
-    const [items, totalCount] = await Promise.all([
-      prisma.inventory.findMany({
-        where,
-        orderBy: { createdAt: "desc" },
+    // If productCode filter is needed, we'll handle it after getting product IDs
+    let productFilter: { id: { in: number[] } } | undefined;
+    if (productCode) {
+      const products = await withRetry(async () => {
+        return prisma.product.findMany({
+          where: { code: productCode },
+          select: { id: true }
+        });
+      }, 2, 'inventory-list-products');
+      
+      if (products.length > 0) {
+        productFilter = { id: { in: products.map(p => p.id) } };
+      } else {
+        // No products found with this code, return empty result
+        return NextResponse.json({
+          items: [],
+          pagination: {
+            page,
+            limit,
+            totalCount: 0,
+            totalPages: 0,
+            hasNext: false,
+            hasPrev: false,
+          },
+        });
+      }
+    }
+
+    // Get inventory items with manual join
+    const items = await withRetry(async () => {
+      return prisma.inventory.findMany({
+        where: {
+          ...inventoryWhere,
+          ...(productFilter && { productId: productFilter.id })
+        },
+        orderBy: { id: 'desc' },
         skip,
         take: limit,
         select: {
+          id: true,
           barcode: true,
           location: true,
           status: true,
           createdAt: true,
-          product: { select: { code: true, name: true, price: true } },
+          productId: true,
         },
-      }),
-      prisma.inventory.count({ where }),
-    ]);
+      });
+    }, 2, 'inventory-list-items');
+
+    // Get total count
+    const totalCount = await withRetry(async () => {
+      return prisma.inventory.count({
+        where: {
+          ...inventoryWhere,
+          ...(productFilter && { productId: productFilter.id })
+        }
+      });
+    }, 2, 'inventory-list-count');
+
+    // Get product details for the items
+    const productIds = [...new Set(items.map(item => item.productId))];
+    const products = await withRetry(async () => {
+      return prisma.product.findMany({
+        where: { id: { in: productIds } },
+        select: { 
+          id: true,
+          code: true, 
+          name: true, 
+          price: true 
+        },
+        orderBy: { id: 'asc' }
+      });
+    }, 2, 'inventory-list-product-details');
+
+    // Create product map for efficient lookup
+    const productMap = new Map(products.map(p => [p.id, p]));
+
+    // Combine inventory items with product data
+    const itemsWithProducts = items.map(item => {
+      const product = productMap.get(item.productId);
+      return {
+        barcode: item.barcode,
+        location: item.location,
+        status: item.status,
+        createdAt: item.createdAt,
+        product: product ? {
+          code: product.code,
+          name: product.name,
+          price: product.price
+        } : null
+      };
+    });
 
     const totalPages = Math.ceil(totalCount / limit);
 
+    logRouteComplete('inventory-list', items.length);
     return NextResponse.json({
-      items,
+      items: itemsWithProducts,
       pagination: {
         page,
         limit,
@@ -52,8 +130,10 @@ export async function GET(req: NextRequest) {
       },
     });
   } catch (error) {
-    console.error("Inventory list API error:", error);
-    return NextResponse.json({ error: "Failed to list inventory items" }, { status: 500 });
+    return NextResponse.json(
+      createErrorResponse("list inventory items", error), 
+      { status: 500 }
+    );
   }
 }
 
