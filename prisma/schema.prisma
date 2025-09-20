@@ -18,6 +18,8 @@ model Product {
   updatedAt DateTime    @updatedAt
   inventory Inventory[]
   sales     SaleItem[]
+
+  @@map("Product") // mapping ke tabel di Supabase
 }
 
 model Inventory {
@@ -28,6 +30,8 @@ model Inventory {
   createdAt DateTime @default(now())
   status    String   @default("READY")
   product   Product  @relation(fields: [productId], references: [id])
+
+  @@map("Inventory")
 }
 
 model Sale {
@@ -44,6 +48,8 @@ model Sale {
   actualReceived Int?
   createdAt      DateTime   @default(now())
   items          SaleItem[]
+
+  @@map("Sale")
 }
 
 model SaleItem {
@@ -55,4 +61,7 @@ model SaleItem {
   status    String?
   product   Product @relation(fields: [productId], references: [id])
   sale      Sale    @relation(fields: [saleId], references: [id])
+
+  @@map("SaleItem")
 }
+
