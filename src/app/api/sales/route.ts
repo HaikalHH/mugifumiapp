@@ -25,7 +25,8 @@ export async function GET(req: NextRequest) {
       prisma.sale.count({ where }),
     ]);
     return NextResponse.json({ rows, total, page, pageSize });
-  } catch {
+  } catch (error) {
+    console.error("Sales API error:", error);
     return NextResponse.json({ error: "Failed to fetch sales" }, { status: 500 });
   }
 }

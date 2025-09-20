@@ -6,6 +6,7 @@ export async function GET() {
     const products = await prisma.product.findMany({ orderBy: { createdAt: "desc" } });
     return NextResponse.json(products);
   } catch (error) {
+    console.error("Products API error:", error);
     return NextResponse.json({ error: "Failed to fetch products" }, { status: 500 });
   }
 }

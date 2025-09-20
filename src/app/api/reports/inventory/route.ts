@@ -46,6 +46,7 @@ export async function GET(req: NextRequest) {
     // We will return lists of recent items for visibility purposes without heavy joins
     return NextResponse.json({ byLocation, all });
   } catch (e) {
+    console.error("Inventory report error:", e);
     return NextResponse.json({ error: "Failed to build inventory report" }, { status: 500 });
   }
 }

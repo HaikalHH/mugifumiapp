@@ -51,7 +51,8 @@ export async function GET(req: NextRequest) {
         hasPrev: page > 1,
       },
     });
-  } catch {
+  } catch (error) {
+    console.error("Inventory list API error:", error);
     return NextResponse.json({ error: "Failed to list inventory items" }, { status: 500 });
   }
 }
