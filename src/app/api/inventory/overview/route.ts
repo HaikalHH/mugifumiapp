@@ -6,7 +6,19 @@ export async function GET() {
   try {
     logRouteStart('inventory-overview');
 
-    // Use sequential queries instead of Promise.all for better reliability
+    // Get ALL products first (not just those with inventory)
+    const products = await withRetry(async () => {
+      return prisma.product.findMany({ 
+        select: { 
+          id: true,
+          code: true, 
+          name: true 
+        },
+        orderBy: { id: 'asc' }
+      });
+    }, 2, 'inventory-overview-products');
+
+    // Then get inventory items for counting
     const items = await withRetry(async () => {
       return prisma.inventory.findMany({
         where: { status: "READY" },
@@ -18,20 +30,6 @@ export async function GET() {
         orderBy: { id: 'asc' }
       });
     }, 2, 'inventory-overview-items');
-
-    const productIds = [...new Set(items.map(item => item.productId))];
-    
-    const products = await withRetry(async () => {
-      return prisma.product.findMany({ 
-        where: { id: { in: productIds } },
-        select: { 
-          id: true,
-          code: true, 
-          name: true 
-        },
-        orderBy: { id: 'asc' }
-      });
-    }, 2, 'inventory-overview-products');
 
     // Create product map for efficient lookup
     const productMap = new Map(products.map(p => [p.id, p]));

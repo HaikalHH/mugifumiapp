@@ -28,7 +28,20 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Get inventory items with manual join
+    // Get all products first (or filtered products)
+    const products = await withRetry(async () => {
+      return prisma.product.findMany({ 
+        where: productFilter || {},
+        select: { 
+          id: true,
+          code: true, 
+          name: true 
+        },
+        orderBy: { id: 'asc' }
+      });
+    }, 2, 'reports-inventory-all-products');
+
+    // Then get inventory items for counting
     const items = await withRetry(async () => {
       return prisma.inventory.findMany({
         where: {
@@ -44,19 +57,6 @@ export async function GET(req: NextRequest) {
         orderBy: { id: 'asc' }
       });
     }, 2, 'reports-inventory-items');
-
-    // Get all products (or filtered products)
-    const products = await withRetry(async () => {
-      return prisma.product.findMany({ 
-        where: productFilter || {},
-        select: { 
-          id: true,
-          code: true, 
-          name: true 
-        },
-        orderBy: { id: 'asc' }
-      });
-    }, 2, 'reports-inventory-all-products');
 
     // Create product map for efficient lookup
     const productMap = new Map(products.map(p => [p.id, p]));
