@@ -230,8 +230,8 @@ export default function SalesPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {(outlet === "Tokopedia" || outlet === "Shopee" || outlet === "WhatsApp" || outlet === "Free" || outlet === "Wholesale" || outlet === "Cafe") && (
               <div className="flex flex-col gap-1">
-                <Label>Customer *</Label>
-                <Input placeholder="Customer" value={form.customer} onChange={(e) => setForm({ ...form, customer: e.target.value })} />
+                <Label>{(outlet === "Tokopedia" || outlet === "Shopee") ? "ID Pesanan *" : "Customer *"}</Label>
+                <Input placeholder={(outlet === "Tokopedia" || outlet === "Shopee") ? "Masukkan ID Pesanan" : "Customer"} value={form.customer} onChange={(e) => setForm({ ...form, customer: e.target.value })} />
               </div>
             )}
             <div className="flex flex-col gap-1">
@@ -410,8 +410,8 @@ export default function SalesPage() {
               </div>
               {(editModal.sale.outlet === "Tokopedia" || editModal.sale.outlet === "Shopee" || editModal.sale.outlet === "WhatsApp" || editModal.sale.outlet === "Free" || editModal.sale.outlet === "Wholesale" || editModal.sale.outlet === "Cafe") && (
                 <div className="flex flex-col gap-1">
-                  <Label>Customer *</Label>
-                  <Input placeholder="Customer" value={editModal.sale.customer || ""} onChange={(e) => setEditModal((prev) => prev.sale ? { ...prev, sale: { ...prev.sale, customer: e.target.value } } : prev)} />
+                  <Label>{(editModal.sale.outlet === "Tokopedia" || editModal.sale.outlet === "Shopee") ? "ID Pesanan *" : "Customer *"}</Label>
+                  <Input placeholder={(editModal.sale.outlet === "Tokopedia" || editModal.sale.outlet === "Shopee") ? "Masukkan ID Pesanan" : "Customer"} value={editModal.sale.customer || ""} onChange={(e) => setEditModal((prev) => prev.sale ? { ...prev, sale: { ...prev.sale, customer: e.target.value } } : prev)} />
                 </div>
               )}
               <div className="flex flex-col gap-1">
