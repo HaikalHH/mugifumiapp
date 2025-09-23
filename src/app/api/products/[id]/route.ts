@@ -36,6 +36,33 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     }
 
     const updated = await prisma.product.update({ where: { id }, data });
+
+    // Propagate product price changes to related records
+    if (typeof data.price === "number") {
+      // 1) Update all sale items that reference this product
+      await prisma.saleItem.updateMany({
+        where: { productId: id },
+        data: { price: data.price }
+      });
+
+      // 2) Recalculate estPayout for affected sales
+      const affected = await prisma.saleItem.findMany({
+        where: { productId: id },
+        select: { saleId: true }
+      });
+      const saleIds = Array.from(new Set(affected.map(a => a.saleId)));
+      await Promise.all(
+        saleIds.map(async (saleId) => {
+          const agg = await prisma.saleItem.aggregate({
+            where: { saleId },
+            _sum: { price: true }
+          });
+          const est = agg._sum.price ?? 0;
+          await prisma.sale.update({ where: { id: saleId }, data: { estPayout: est } });
+        })
+      );
+    }
+
     return NextResponse.json(updated);
   } catch (error: any) {
     if (error?.code === "P2025") {
