@@ -81,14 +81,22 @@ export default function InventoryPage() {
     const res = await fetch("/api/inventory/in", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ barcode, location }) });
     
     if (res.ok) {
+      const data = await res.json();
       setBarcode("");
       load();
+      
+      // Show success message for auto-move
+      if (data.action === 'moved') {
+        setScanError(`✅ ${data.message}`);
+        // Clear success message after 3 seconds
+        setTimeout(() => setScanError(""), 3000);
+      }
     } else {
       const error = await res.json();
       if (res.status === 409) {
-        setScanError("Barcode sudah pernah di-scan sebelumnya");
+        setScanError(`❌ ${error.error || "Barcode sudah pernah di-scan sebelumnya"}`);
       } else {
-        setScanError(error.error || "Gagal menambahkan inventory");
+        setScanError(`❌ ${error.error || "Gagal menambahkan inventory"}`);
       }
     }
   };
@@ -119,7 +127,11 @@ export default function InventoryPage() {
       </form>
       
       {scanError && (
-        <div className="p-3 bg-red-50 border border-red-200 rounded-md text-red-700 text-sm">
+        <div className={`p-3 border rounded-md text-sm ${
+          scanError.startsWith('✅') 
+            ? 'bg-green-50 border-green-200 text-green-700' 
+            : 'bg-red-50 border-red-200 text-red-700'
+        }`}>
           {scanError}
         </div>
       )}
