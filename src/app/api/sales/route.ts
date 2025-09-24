@@ -15,18 +15,8 @@ export async function GET(req: NextRequest) {
     const where: any = {};
     if (from || to) {
       where.orderDate = {};
-      if (from) {
-        // Start from beginning of the day
-        const fromDate = new Date(from);
-        fromDate.setHours(0, 0, 0, 0);
-        where.orderDate.gte = fromDate;
-      }
-      if (to) {
-        // End at the end of the day (23:59:59.999)
-        const toDate = new Date(to);
-        toDate.setHours(23, 59, 59, 999);
-        where.orderDate.lte = toDate;
-      }
+      if (from) where.orderDate.gte = new Date(from);
+      if (to) where.orderDate.lte = new Date(to);
     }
 
     // Use sequential queries instead of Promise.all for better reliability

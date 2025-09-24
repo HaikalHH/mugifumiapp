@@ -3,7 +3,6 @@ import { useEffect, useState } from "react";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui/table";
-import { DatePickerFilter } from "../../components/ui/date-picker";
 import { useAuth } from "../providers";
 
 export default function ReportsPage() {
@@ -72,37 +71,11 @@ export default function ReportsPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
           <div className="flex flex-col gap-1">
             <Label>Periode From</Label>
-            <DatePickerFilter 
-              value={from ? new Date(from + 'T00:00:00') : undefined} 
-              onChange={(date) => { 
-                if (date) {
-                  const year = date.getFullYear();
-                  const month = String(date.getMonth() + 1).padStart(2, '0');
-                  const day = String(date.getDate()).padStart(2, '0');
-                  setFrom(`${year}-${month}-${day}`);
-                } else {
-                  setFrom('');
-                }
-              }} 
-              placeholder="Pilih tanggal mulai"
-            />
+            <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
           </div>
           <div className="flex flex-col gap-1">
             <Label>Periode To</Label>
-            <DatePickerFilter 
-              value={to ? new Date(to + 'T00:00:00') : undefined} 
-              onChange={(date) => { 
-                if (date) {
-                  const year = date.getFullYear();
-                  const month = String(date.getMonth() + 1).padStart(2, '0');
-                  const day = String(date.getDate()).padStart(2, '0');
-                  setTo(`${year}-${month}-${day}`);
-                } else {
-                  setTo('');
-                }
-              }} 
-              placeholder="Pilih tanggal akhir"
-            />
+            <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
           </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

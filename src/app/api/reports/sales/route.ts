@@ -17,18 +17,8 @@ export async function GET(req: NextRequest) {
     if (outlet) whereSale.outlet = outlet;
     if (from || to) {
       whereSale.orderDate = {};
-      if (from) {
-        // Start from beginning of the day
-        const fromDate = new Date(from);
-        fromDate.setHours(0, 0, 0, 0);
-        whereSale.orderDate.gte = fromDate;
-      }
-      if (to) {
-        // End at the end of the day (23:59:59.999)
-        const toDate = new Date(to);
-        toDate.setHours(23, 59, 59, 999);
-        whereSale.orderDate.lte = toDate;
-      }
+      if (from) whereSale.orderDate.gte = new Date(from);
+      if (to) whereSale.orderDate.lte = new Date(to);
     }
 
     // Use manual joins for better performance
