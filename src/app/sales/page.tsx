@@ -6,6 +6,7 @@ import { Label } from "../../components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "../../components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui/table";
+import { DateTimePicker, DatePickerFilter } from "../../components/ui/date-picker";
 
 type Sale = { id: number; outlet: string; location: string; orderDate: string; customer?: string | null };
 
@@ -31,7 +32,7 @@ export default function SalesPage() {
   const [form, setForm] = useState({
     customer: "",
     status: "ordered",
-    orderDate: new Date().toISOString().slice(0, 16), // datetime-local
+    orderDate: "", // No default value - required field
     shipDate: "",
     estPayout: "", // computed and shown read-only when items exist
     actPayout: "",
@@ -75,7 +76,7 @@ export default function SalesPage() {
         if (key === "cafe") return "Display";
         return "ordered";
       })(),
-      orderDate: new Date().toISOString().slice(0, 16),
+      orderDate: "", // No default value - required field
       shipDate: "",
       estPayout: "",
       actPayout: "",
@@ -106,6 +107,14 @@ export default function SalesPage() {
     // Basic per-outlet validation
     setError("");
     const key = outlet.toLowerCase();
+    if (!form.orderDate.trim()) {
+      setError("Tanggal Pemesanan wajib diisi");
+      return;
+    }
+    if (!form.shipDate.trim()) {
+      setError("Tanggal Pengiriman wajib diisi");
+      return;
+    }
     if ((key === "tokopedia" || key === "shopee" || key === "whatsapp" || key === "free" || key === "wholesale" || key === "cafe") && !form.customer.trim()) {
       setError("Customer wajib diisi");
       return;
@@ -114,7 +123,6 @@ export default function SalesPage() {
       setError("Tambah minimal 1 item terlebih dahulu");
       return;
     }
-    // Ship date is optional for all outlets
 
     const payload: any = {
       outlet,
@@ -211,11 +219,39 @@ export default function SalesPage() {
         </div>
         <div className="flex flex-col gap-1">
           <Label>Periode From</Label>
-          <Input type="date" value={from} onChange={(e) => { setPage(1); setFrom(e.target.value); }} />
+          <DatePickerFilter 
+            value={from ? new Date(from + 'T00:00:00') : undefined} 
+            onChange={(date) => { 
+              setPage(1); 
+              if (date) {
+                const year = date.getFullYear();
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const day = String(date.getDate()).padStart(2, '0');
+                setFrom(`${year}-${month}-${day}`);
+              } else {
+                setFrom('');
+              }
+            }} 
+            placeholder="Pilih tanggal mulai"
+          />
         </div>
         <div className="flex flex-col gap-1">
           <Label>Periode To</Label>
-          <Input type="date" value={to} onChange={(e) => { setPage(1); setTo(e.target.value); }} />
+          <DatePickerFilter 
+            value={to ? new Date(to + 'T00:00:00') : undefined} 
+            onChange={(date) => { 
+              setPage(1); 
+              if (date) {
+                const year = date.getFullYear();
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const day = String(date.getDate()).padStart(2, '0');
+                setTo(`${year}-${month}-${day}`);
+              } else {
+                setTo('');
+              }
+            }} 
+            placeholder="Pilih tanggal akhir"
+          />
         </div>
         <div className="flex items-end">
           <Button className="w-full" onClick={openModal}>Create Sale</Button>
@@ -256,12 +292,22 @@ export default function SalesPage() {
               </Select>
             </div>
             <div className="flex flex-col gap-1">
-              <Label>Order Date</Label>
-              <Input type="datetime-local" value={form.orderDate} onChange={(e) => setForm({ ...form, orderDate: e.target.value })} />
+              <Label>Tanggal Pemesanan *</Label>
+              <DateTimePicker 
+                value={form.orderDate} 
+                onChange={(value) => setForm({ ...form, orderDate: value })} 
+                placeholder="Select Tanggal Pemesanan and time"
+                required={true}
+              />
             </div>
             <div className="flex flex-col gap-1">
-              <Label>Ship Date</Label>
-              <Input type="datetime-local" placeholder="Ship Date" value={form.shipDate} onChange={(e) => setForm({ ...form, shipDate: e.target.value })} />
+              <Label>Tanggal Pengiriman *</Label>
+              <DateTimePicker 
+                value={form.shipDate} 
+                onChange={(value) => setForm({ ...form, shipDate: value })} 
+                placeholder="Select Tanggal Pengiriman and time"
+                required={true}
+              />
             </div>
             {(outlet === "Tokopedia" || outlet === "Shopee" || outlet === "Wholesale") && (
               <>
@@ -345,7 +391,7 @@ export default function SalesPage() {
               <TableHead className="text-left">Outlet</TableHead>
               <TableHead className="text-left">Location</TableHead>
               <TableHead className="text-left">Customer</TableHead>
-              <TableHead className="text-left">Order Date</TableHead>
+              <TableHead className="text-left">Tanggal Pemesanan</TableHead>
               <TableHead className="text-center">Actions</TableHead>
             </TableRow>
           </TableHeader>
@@ -426,12 +472,22 @@ export default function SalesPage() {
                 </select>
               </div>
               <div className="flex flex-col gap-1">
-                <Label>Order Date</Label>
-                <Input type="datetime-local" value={new Date(editModal.sale.orderDate).toISOString().slice(0,16)} onChange={(e) => setEditModal((prev) => prev.sale ? { ...prev, sale: { ...prev.sale, orderDate: e.target.value } } : prev)} />
+                <Label>Tanggal Pemesanan *</Label>
+                <DateTimePicker 
+                  value={new Date(editModal.sale.orderDate).toISOString().slice(0,16)} 
+                  onChange={(value) => setEditModal((prev) => prev.sale ? { ...prev, sale: { ...prev.sale, orderDate: value } } : prev)} 
+                  placeholder="Select Tanggal Pemesanan and time"
+                  required={true}
+                />
               </div>
               <div className="flex flex-col gap-1">
-                <Label>Ship Date</Label>
-                <Input type="datetime-local" value={editModal.sale.shipDate ? new Date(editModal.sale.shipDate).toISOString().slice(0,16) : ""} onChange={(e) => setEditModal((prev) => prev.sale ? { ...prev, sale: { ...prev.sale, shipDate: e.target.value || null } } : prev)} />
+                <Label>Tanggal Pengiriman *</Label>
+                <DateTimePicker 
+                  value={editModal.sale.shipDate ? new Date(editModal.sale.shipDate).toISOString().slice(0,16) : ""} 
+                  onChange={(value) => setEditModal((prev) => prev.sale ? { ...prev, sale: { ...prev.sale, shipDate: value || null } } : prev)} 
+                  placeholder="Select Tanggal Pengiriman and time"
+                  required={true}
+                />
               </div>
               {(editModal.sale.outlet === "Tokopedia" || editModal.sale.outlet === "Shopee" || editModal.sale.outlet === "Wholesale") && (
                 <div className="flex flex-col gap-1">
