@@ -6,8 +6,10 @@ import { Label } from "../../components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "../../components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui/table";
+import { Badge } from "../../components/ui/badge";
+import { DateTimePicker } from "../../components/ui/date-picker";
 
-type Sale = { id: number; outlet: string; location: string; orderDate: string; customer?: string | null };
+type Sale = { id: number; outlet: string; location: string; orderDate: string; customer?: string | null; actPayout?: number | null; shipDate?: string | null };
 
 import { useAuth, lockedLocation } from "../providers";
 
@@ -31,7 +33,7 @@ export default function SalesPage() {
   const [form, setForm] = useState({
     customer: "",
     status: "ordered",
-    orderDate: new Date().toISOString().slice(0, 16), // datetime-local
+    orderDate: "", // required; keep empty until user selects
     shipDate: "",
     estPayout: "", // computed and shown read-only when items exist
     actPayout: "",
@@ -75,7 +77,7 @@ export default function SalesPage() {
         if (key === "cafe") return "Display";
         return "ordered";
       })(),
-      orderDate: new Date().toISOString().slice(0, 16),
+      orderDate: "",
       shipDate: "",
       estPayout: "",
       actPayout: "",
@@ -114,6 +116,11 @@ export default function SalesPage() {
       setError("Tambah minimal 1 item terlebih dahulu");
       return;
     }
+    // Order date is required for creation
+    if (!form.orderDate) {
+      setError("Order date wajib diisi");
+      return;
+    }
     // Ship date is optional for all outlets
 
     const payload: any = {
@@ -121,8 +128,8 @@ export default function SalesPage() {
       location,
       customer: form.customer || undefined,
       status: form.status || undefined,
-      orderDate: form.orderDate ? new Date(form.orderDate).toISOString() : undefined,
-      shipDate: form.shipDate ? new Date(form.shipDate).toISOString() : undefined,
+      orderDate: form.orderDate ? new Date(form.orderDate + "T00:00:00").toISOString() : undefined,
+      shipDate: form.shipDate ? new Date(form.shipDate + "T00:00:00").toISOString() : undefined,
       // estPayout computed server-side; actPayout is numeric amount (optional)
       actPayout: form.actPayout ? Number(form.actPayout) : undefined,
       discount: form.discount ? Number(form.discount) : undefined,
@@ -257,11 +264,39 @@ export default function SalesPage() {
             </div>
             <div className="flex flex-col gap-1">
               <Label>Order Date</Label>
-              <Input type="datetime-local" value={form.orderDate} onChange={(e) => setForm({ ...form, orderDate: e.target.value })} />
+              <DateTimePicker
+                value={form.orderDate ? new Date(form.orderDate) : undefined}
+                onChange={(date) => {
+                  if (date) {
+                    // Format as YYYY-MM-DD for date input compatibility
+                    const year = date.getFullYear()
+                    const month = String(date.getMonth() + 1).padStart(2, '0')
+                    const day = String(date.getDate()).padStart(2, '0')
+                    setForm({ ...form, orderDate: `${year}-${month}-${day}` })
+                  } else {
+                    setForm({ ...form, orderDate: "" })
+                  }
+                }}
+                placeholder="Select order date"
+              />
             </div>
             <div className="flex flex-col gap-1">
               <Label>Ship Date</Label>
-              <Input type="datetime-local" placeholder="Ship Date" value={form.shipDate} onChange={(e) => setForm({ ...form, shipDate: e.target.value })} />
+              <DateTimePicker
+                value={form.shipDate ? new Date(form.shipDate) : undefined}
+                onChange={(date) => {
+                  if (date) {
+                    // Format as YYYY-MM-DD for date input compatibility
+                    const year = date.getFullYear()
+                    const month = String(date.getMonth() + 1).padStart(2, '0')
+                    const day = String(date.getDate()).padStart(2, '0')
+                    setForm({ ...form, shipDate: `${year}-${month}-${day}` })
+                  } else {
+                    setForm({ ...form, shipDate: "" })
+                  }
+                }}
+                placeholder="Select ship date"
+              />
             </div>
             {(outlet === "Tokopedia" || outlet === "Shopee" || outlet === "Wholesale") && (
               <>
@@ -346,6 +381,7 @@ export default function SalesPage() {
               <TableHead className="text-left">Location</TableHead>
               <TableHead className="text-left">Customer</TableHead>
               <TableHead className="text-left">Order Date</TableHead>
+              <TableHead className="text-left">Shipping Status</TableHead>
               <TableHead className="text-center">Actions</TableHead>
             </TableRow>
           </TableHeader>
@@ -353,10 +389,31 @@ export default function SalesPage() {
             {sales.map((s) => (
               <TableRow key={s.id}>
                 <TableCell>{s.id}</TableCell>
-                <TableCell>{s.outlet}</TableCell>
+                <TableCell>
+                  <div className="flex items-center gap-2">
+                    <span>{s.outlet}</span>
+                    {(() => {
+                      const key = String(s.outlet || "").toLowerCase();
+                      if (key === "tokopedia" || key === "shopee") {
+                        const filled = typeof s.actPayout === "number" && !Number.isNaN(s.actPayout);
+                        return (
+                          <Badge color={filled ? "green" : "red"}>
+                            {filled ? "Actual" : "Actual"}
+                          </Badge>
+                        );
+                      }
+                      return null;
+                    })()}
+                  </div>
+                </TableCell>
                 <TableCell>{s.location}</TableCell>
                 <TableCell>{s.customer || "-"}</TableCell>
-                <TableCell>{new Date(s.orderDate).toLocaleString()}</TableCell>
+                <TableCell>{new Date(s.orderDate).toLocaleDateString()}</TableCell>
+                <TableCell>
+                  <Badge color={s.shipDate ? "green" : "red"}>
+                    {s.shipDate ? "Telah Dikirim" : "Belum Dikirim"}
+                  </Badge>
+                </TableCell>
                 <TableCell className="text-center">
                   <div className="flex gap-3 justify-center">
                     <Button variant="link" className="p-0 h-auto" onClick={() => openEdit(s.id)}>Edit</Button>
@@ -427,11 +484,43 @@ export default function SalesPage() {
               </div>
               <div className="flex flex-col gap-1">
                 <Label>Order Date</Label>
-                <Input type="datetime-local" value={new Date(editModal.sale.orderDate).toISOString().slice(0,16)} onChange={(e) => setEditModal((prev) => prev.sale ? { ...prev, sale: { ...prev.sale, orderDate: e.target.value } } : prev)} />
+                <DateTimePicker
+                  value={new Date(editModal.sale.orderDate)}
+                  onChange={(date) => {
+                    if (date) {
+                      const year = date.getFullYear()
+                      const month = String(date.getMonth() + 1).padStart(2, '0')
+                      const day = String(date.getDate()).padStart(2, '0')
+                      const hours = String(date.getHours()).padStart(2, '0')
+                      const minutes = String(date.getMinutes()).padStart(2, '0')
+                      const formattedDate = `${year}-${month}-${day}T${hours}:${minutes}`
+                      setEditModal((prev) => prev.sale ? { ...prev, sale: { ...prev.sale, orderDate: formattedDate } } : prev)
+                    } else {
+                      setEditModal((prev) => prev.sale ? { ...prev, sale: { ...prev.sale, orderDate: "" } } : prev)
+                    }
+                  }}
+                  placeholder="Select order date"
+                />
               </div>
               <div className="flex flex-col gap-1">
                 <Label>Ship Date</Label>
-                <Input type="datetime-local" value={editModal.sale.shipDate ? new Date(editModal.sale.shipDate).toISOString().slice(0,16) : ""} onChange={(e) => setEditModal((prev) => prev.sale ? { ...prev, sale: { ...prev.sale, shipDate: e.target.value || null } } : prev)} />
+                <DateTimePicker
+                  value={editModal.sale.shipDate ? new Date(editModal.sale.shipDate) : undefined}
+                  onChange={(date) => {
+                    if (date) {
+                      const year = date.getFullYear()
+                      const month = String(date.getMonth() + 1).padStart(2, '0')
+                      const day = String(date.getDate()).padStart(2, '0')
+                      const hours = String(date.getHours()).padStart(2, '0')
+                      const minutes = String(date.getMinutes()).padStart(2, '0')
+                      const formattedDate = `${year}-${month}-${day}T${hours}:${minutes}`
+                      setEditModal((prev) => prev.sale ? { ...prev, sale: { ...prev.sale, shipDate: formattedDate } } : prev)
+                    } else {
+                      setEditModal((prev) => prev.sale ? { ...prev, sale: { ...prev.sale, shipDate: null } } : prev)
+                    }
+                  }}
+                  placeholder="Select ship date"
+                />
               </div>
               {(editModal.sale.outlet === "Tokopedia" || editModal.sale.outlet === "Shopee" || editModal.sale.outlet === "Wholesale") && (
                 <div className="flex flex-col gap-1">

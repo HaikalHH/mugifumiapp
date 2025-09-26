@@ -236,7 +236,7 @@ export default function ReportsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {menuItems && menuItems.menuItems && menuItems.menuItems.slice(0, 10).map((item: any) => (
+                {menuItems && menuItems.menuItems && menuItems.menuItems.slice(0, 3).map((item: any) => (
                   <TableRow key={item.productCode}>
                     <TableCell>
                       <div>
