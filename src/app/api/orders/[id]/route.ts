@@ -2,11 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "../../../../lib/prisma";
 import { withRetry, createErrorResponse, logRouteStart, logRouteComplete } from "../../../../lib/db-utils";
 
-export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     logRouteStart('order-update');
 
-    const orderId = parseInt(params.id);
+    const { id } = await params;
+    const orderId = parseInt(id);
     if (isNaN(orderId)) {
       return NextResponse.json({ error: "Invalid order ID" }, { status: 400 });
     }
@@ -164,11 +165,12 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
   }
 }
 
-export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     logRouteStart('order-delete');
 
-    const orderId = parseInt(params.id);
+    const { id } = await params;
+    const orderId = parseInt(id);
     if (isNaN(orderId)) {
       return NextResponse.json({ error: "Invalid order ID" }, { status: 400 });
     }

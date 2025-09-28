@@ -2,11 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "../../../../lib/prisma";
 import { withRetry, createErrorResponse, logRouteStart, logRouteComplete } from "../../../../lib/db-utils";
 
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     logRouteStart('product-get');
 
-    const productId = parseInt(params.id);
+    const { id } = await params;
+    const productId = parseInt(id);
     if (isNaN(productId)) {
       return NextResponse.json({ error: "Invalid product ID" }, { status: 400 });
     }

@@ -2,11 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "../../../../../lib/prisma";
 import { withRetry, createErrorResponse, logRouteStart, logRouteComplete } from "../../../../../lib/db-utils";
 
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     logRouteStart('delivery-cancel');
 
-    const deliveryId = parseInt(params.id);
+    const { id } = await params;
+    const deliveryId = parseInt(id);
     if (isNaN(deliveryId)) {
       return NextResponse.json({ error: "Invalid delivery ID" }, { status: 400 });
     }
