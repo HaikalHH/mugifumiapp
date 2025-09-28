@@ -479,7 +479,7 @@ export default function DeliveryPage() {
                 <TableCell>{new Date(delivery.order.orderDate).toLocaleDateString()}</TableCell>
                 <TableCell>{delivery.order.location}</TableCell>
                 <TableCell>
-                  <Badge color={delivery.status === "delivered" ? "green" : "yellow"}>
+                  <Badge color={delivery.status === "delivered" ? "green" : "gray"}>
                     {delivery.status}
                   </Badge>
                 </TableCell>
