@@ -26,6 +26,22 @@ type Order = {
       name: string;
     };
   }>;
+  deliveries?: Array<{
+    id: number;
+    status: string;
+    deliveryDate: string | null;
+    items: Array<{
+      id: number;
+      productId: number;
+      barcode: string;
+      price: number;
+      product: {
+        id: number;
+        code: string;
+        name: string;
+      };
+    }>;
+  }>;
 };
 
 type Delivery = {
