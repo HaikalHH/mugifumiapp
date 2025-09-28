@@ -12,58 +12,50 @@ export async function GET(req: NextRequest) {
 
     logRouteStart('reports-sales', { from, to, location, outlet });
 
-    const whereSale: any = {};
-    if (location) whereSale.location = location;
-    if (outlet) whereSale.outlet = outlet;
+    const whereOrder: any = {};
+    if (location) whereOrder.location = location;
+    if (outlet) whereOrder.outlet = outlet;
     if (from || to) {
-      whereSale.orderDate = {};
-      if (from) whereSale.orderDate.gte = new Date(from);
-      if (to) whereSale.orderDate.lte = new Date(to);
+      whereOrder.orderDate = {};
+      if (from) {
+        const fromDate = new Date(from);
+        fromDate.setHours(0, 0, 0, 0); // Start of day
+        whereOrder.orderDate.gte = fromDate;
+      }
+      if (to) {
+        const toDate = new Date(to);
+        toDate.setHours(23, 59, 59, 999); // End of day
+        whereOrder.orderDate.lte = toDate;
+      }
     }
 
-    // Use manual joins for better performance
-    const sales = await withRetry(async () => {
-      return prisma.sale.findMany({
-        where: whereSale,
+    // Use Order table instead of Sale table
+    const orders = await withRetry(async () => {
+      return prisma.order.findMany({
+        where: whereOrder,
         select: {
           id: true,
           outlet: true,
           location: true,
           orderDate: true,
           discount: true,
-          estPayout: true,
-          actPayout: true
+          totalAmount: true,
+          actPayout: true,
+          items: {
+            select: {
+              id: true,
+              productId: true,
+              quantity: true,
+              price: true
+            }
+          }
         },
         orderBy: { id: 'desc' }
       });
-    }, 2, 'reports-sales-sales');
+    }, 2, 'reports-sales-orders');
 
-    if (sales.length === 0) {
+    if (orders.length === 0) {
       return NextResponse.json({ byOutlet: {}, totalActual: 0, avgPotonganPct: null, sales: [] });
-    }
-
-    // Get sale items separately
-    const saleIds = sales.map(s => s.id);
-    const items = await withRetry(async () => {
-      return prisma.saleItem.findMany({
-        where: { saleId: { in: saleIds } },
-        select: {
-          id: true,
-          saleId: true,
-          price: true,
-          status: true
-        },
-        orderBy: { id: 'asc' }
-      });
-    }, 2, 'reports-sales-items');
-
-    // Group items by saleId
-    const itemsBySale = new Map();
-    for (const item of items) {
-      if (!itemsBySale.has(item.saleId)) {
-        itemsBySale.set(item.saleId, []);
-      }
-      itemsBySale.get(item.saleId).push(item);
     }
 
     const needsDiscount = (ot: string) => {
@@ -71,37 +63,37 @@ export async function GET(req: NextRequest) {
       return k === "whatsapp" || k === "cafe" || k === "wholesale";
     };
 
-    const perSale = sales.map((s) => {
-      const saleItems = itemsBySale.get(s.id) || [];
-      const isCafe = s.outlet.toLowerCase() === "cafe";
-      // For Cafe, only count items with status 'Terjual' toward calculations
-      const effectiveItems = isCafe ? saleItems.filter((it: any) => (it.status || "").toLowerCase() === "terjual") : saleItems;
-      const preDiscountSubtotal = effectiveItems.reduce((acc: number, it: any) => acc + it.price, 0);
-      const discountPct = needsDiscount(s.outlet) && typeof s.discount === "number" ? s.discount : 0;
+    const perSale = orders.map((order) => {
+      const orderItems = order.items || [];
+      const isCafe = order.outlet.toLowerCase() === "cafe";
+      
+      // Calculate subtotal from order items
+      const preDiscountSubtotal = orderItems.reduce((acc: number, item: any) => acc + (item.price * item.quantity), 0);
+      const discountPct = needsDiscount(order.outlet) && typeof order.discount === "number" ? order.discount : 0;
       const discountedSubtotal = Math.round(preDiscountSubtotal * (1 - (discountPct || 0) / 100));
 
-      // Expected total still respects estimate if available (for non-cafe)
-      const expectedTotal = isCafe ? discountedSubtotal : (s.estPayout ?? discountedSubtotal);
+      // For orders, use totalAmount as the expected total
+      const expectedTotal = order.totalAmount || discountedSubtotal;
 
-      // For Cafe, actual equals discounted subtotal of SOLD items only; others use recorded actual payout
-      const actual = isCafe ? discountedSubtotal : (s.actPayout ?? null);
+      // For orders, actual received is actPayout if available, otherwise totalAmount
+      const actual = order.actPayout || order.totalAmount || null;
 
-      // Potongan definition:
-      // - Cafe: original (pre-discount, sold items only) minus actual (discounted)
-      // - Others: maintain previous behavior (difference between expected and actual)
+      // Potongan calculation for orders:
+      // - Cafe: original (pre-discount) minus actual (discounted)
+      // - Others: difference between pre-discount and actual
       const potongan = isCafe
         ? (preDiscountSubtotal - discountedSubtotal)
-        : (actual != null ? (expectedTotal - actual) : null);
+        : (actual != null ? (preDiscountSubtotal - actual) : null);
 
       const potonganPct = isCafe
         ? (preDiscountSubtotal > 0 ? Math.round(((potongan as number / preDiscountSubtotal) * 100) * 10) / 10 : null)
-        : (potongan != null && expectedTotal > 0 ? Math.round((potongan / expectedTotal) * 1000) / 10 : null);
+        : (potongan != null && preDiscountSubtotal > 0 ? Math.round((potongan / preDiscountSubtotal) * 1000) / 10 : null);
 
       return {
-        id: s.id,
-        outlet: s.outlet,
-        location: s.location,
-        orderDate: s.orderDate,
+        id: order.id,
+        outlet: order.outlet,
+        location: order.location,
+        orderDate: order.orderDate,
         // Keep fields for consumers
         subtotal: preDiscountSubtotal,
         discountPct: discountPct || 0,
@@ -110,7 +102,7 @@ export async function GET(req: NextRequest) {
         potongan,
         potonganPct,
         originalBeforeDiscount: preDiscountSubtotal,
-        itemsCount: saleItems.length,
+        itemsCount: orderItems.length,
       };
     });
 

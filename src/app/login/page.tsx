@@ -2,6 +2,7 @@
 import { useRouter } from "next/navigation";
 import { useAuth } from "../providers";
 import { useState } from "react";
+import Image from "next/image";
 
 export default function LoginPage() {
   const { setUsername } = useAuth();
@@ -27,6 +28,17 @@ export default function LoginPage() {
   return (
     <main className="min-h-screen flex items-center justify-center p-6">
       <form onSubmit={submit} className="w-full max-w-sm border rounded-md p-6 space-y-4">
+        {/* Logo */}
+        <div className="flex justify-center mb-4">
+          <Image
+            src="/assets/Logo Square.jpg"
+            alt="Mugifumi Logo"
+            width={80}
+            height={80}
+            className="rounded-lg"
+            priority
+          />
+        </div>
         <div className="text-lg font-semibold text-center">Login</div>
         <div className="space-y-2">
           <label className="text-sm font-medium">Username</label>

@@ -41,12 +41,12 @@ export function useAuth() {
   return useContext(AuthContext);
 }
 
-export function hasAccess(username: Role | null, page: "products" | "inventory" | "sales" | "reports"): boolean {
+export function hasAccess(username: Role | null, page: "products" | "inventory" | "orders" | "delivery" | "reports"): boolean {
   if (!username) return false;
   const u = String(username).toLowerCase();
   if (u === "admin") return true;
   if (u === "manager") return page === "reports";
-  if (u === "bandung" || u === "jakarta") return page === "inventory" || page === "sales";
+  if (u === "bandung" || u === "jakarta") return page === "inventory" || page === "orders" || page === "delivery";
   return false;
 }
 

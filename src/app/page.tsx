@@ -23,10 +23,16 @@ export default function HomePage() {
           <div className="text-sm text-gray-600">Scan in/out, pindah lokasi</div>
         </Link>
         )}
-        {hasAccess(username, "sales") && (
-        <Link href="/sales" className="block rounded-md border p-4 hover:bg-gray-50">
-          <div className="font-medium">Sales</div>
-          <div className="text-sm text-gray-600">Transaksi per outlet</div>
+        {hasAccess(username, "orders") && (
+        <Link href="/orders" className="block rounded-md border p-4 hover:bg-gray-50">
+          <div className="font-medium">Orders</div>
+          <div className="text-sm text-gray-600">Buat pesanan baru</div>
+        </Link>
+        )}
+        {hasAccess(username, "delivery") && (
+        <Link href="/delivery" className="block rounded-md border p-4 hover:bg-gray-50">
+          <div className="font-medium">Delivery</div>
+          <div className="text-sm text-gray-600">Proses pengiriman pesanan</div>
         </Link>
         )}
         {hasAccess(username, "reports") && (

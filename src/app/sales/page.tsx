@@ -47,12 +47,12 @@ export default function SalesPage() {
 
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
+  const [from, setFrom] = useState<Date | undefined>(undefined);
+  const [to, setTo] = useState<Date | undefined>(undefined);
   const loadSales = async () => {
     const params = new URLSearchParams({ page: String(page), pageSize: "10" });
-    if (from) params.set("from", new Date(from).toISOString());
-    if (to) params.set("to", new Date(to).toISOString());
+    if (from) params.set("from", from.toISOString());
+    if (to) params.set("to", to.toISOString());
     const res = await fetch(`/api/sales?${params.toString()}`);
     const data = await res.json();
     setSales(data.rows || []);
@@ -188,45 +188,61 @@ export default function SalesPage() {
   return (
     <main className="p-6 space-y-6">
       <h1 className="text-xl font-semibold">Sales</h1>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
         <div className="flex flex-col gap-1">
-          <Label>Outlet & Location</Label>
-          <div className="flex items-center gap-2">
-            <Select value={outlet} onValueChange={setOutlet}>
-              <SelectTrigger className="min-w-[160px]">
-                <SelectValue placeholder="Outlet" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="Tokopedia">Tokopedia</SelectItem>
-                <SelectItem value="Shopee">Shopee</SelectItem>
-                <SelectItem value="WhatsApp">WhatsApp</SelectItem>
-                <SelectItem value="Cafe">Cafe</SelectItem>
-                <SelectItem value="Wholesale">Wholesale</SelectItem>
-                <SelectItem value="Free">Free</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={location} onValueChange={(v) => setLocation(v)} disabled={Boolean(lockedLocation(username))}>
-              <SelectTrigger className="min-w-[140px]">
-                <SelectValue placeholder="Lokasi" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="Bandung">Bandung</SelectItem>
-                <SelectItem value="Jakarta">Jakarta</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+          <Label>Outlet</Label>
+          <Select value={outlet} onValueChange={setOutlet}>
+            <SelectTrigger>
+              <SelectValue placeholder="Pilih Outlet" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="Tokopedia">Tokopedia</SelectItem>
+              <SelectItem value="Shopee">Shopee</SelectItem>
+              <SelectItem value="WhatsApp">WhatsApp</SelectItem>
+              <SelectItem value="Cafe">Cafe</SelectItem>
+              <SelectItem value="Wholesale">Wholesale</SelectItem>
+              <SelectItem value="Free">Free</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex flex-col gap-1">
+          <Label>Location</Label>
+          <Select value={location} onValueChange={(v) => setLocation(v)} disabled={Boolean(lockedLocation(username))}>
+            <SelectTrigger>
+              <SelectValue placeholder="Pilih Lokasi" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="Bandung">Bandung</SelectItem>
+              <SelectItem value="Jakarta">Jakarta</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
         <div className="flex flex-col gap-1">
           <Label>Periode From</Label>
-          <Input type="date" value={from} onChange={(e) => { setPage(1); setFrom(e.target.value); }} />
+          <DateTimePicker
+            value={from}
+            onChange={(date) => { setPage(1); setFrom(date); }}
+            placeholder="Select start date"
+          />
         </div>
         <div className="flex flex-col gap-1">
           <Label>Periode To</Label>
-          <Input type="date" value={to} onChange={(e) => { setPage(1); setTo(e.target.value); }} />
+          <DateTimePicker
+            value={to}
+            onChange={(date) => { setPage(1); setTo(date); }}
+            placeholder="Select end date"
+          />
         </div>
-        <div className="flex items-end">
-          <Button className="w-full" onClick={openModal}>Create Sale</Button>
-        </div>
+      </div>
+      <div className="flex gap-3">
+        <Button onClick={openModal}>Create Sale</Button>
+        <Button variant="outline" onClick={() => {
+          setFrom(undefined);
+          setTo(undefined);
+          setPage(1);
+        }}>
+          Clear Filters
+        </Button>
       </div>
 
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>

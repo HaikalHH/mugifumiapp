@@ -12,35 +12,42 @@ export async function GET(req: NextRequest) {
 
     logRouteStart('reports-menu-items', { from, to, location, outlet });
 
-    // Build sale filter
-    const whereSale: any = {};
-    if (location) whereSale.location = location;
-    if (outlet) whereSale.outlet = outlet;
+    // Build order filter
+    const whereOrder: any = {};
+    if (location) whereOrder.location = location;
+    if (outlet) whereOrder.outlet = outlet;
     if (from || to) {
-      whereSale.orderDate = {};
-      if (from) whereSale.orderDate.gte = new Date(from);
-      if (to) whereSale.orderDate.lte = new Date(to);
+      whereOrder.orderDate = {};
+      if (from) {
+        const fromDate = new Date(from);
+        fromDate.setHours(0, 0, 0, 0); // Start of day
+        whereOrder.orderDate.gte = fromDate;
+      }
+      if (to) {
+        const toDate = new Date(to);
+        toDate.setHours(23, 59, 59, 999); // End of day
+        whereOrder.orderDate.lte = toDate;
+      }
     }
 
-    // Get sale items with manual joins for better performance
-    const saleItems = await withRetry(async () => {
-      return prisma.saleItem.findMany({
+    // Get order items with manual joins for better performance
+    const orderItems = await withRetry(async () => {
+      return prisma.orderItem.findMany({
         where: {
-          sale: whereSale,
+          order: whereOrder,
         },
         select: {
           id: true,
-          barcode: true,
-          price: true,
-          status: true,
           productId: true,
-          saleId: true,
+          quantity: true,
+          price: true,
+          orderId: true,
         },
         orderBy: { id: 'desc' }
       });
-    }, 2, 'reports-menu-items-sale-items');
+    }, 2, 'reports-menu-items-order-items');
 
-    if (saleItems.length === 0) {
+    if (orderItems.length === 0) {
       return NextResponse.json({
         menuItems: [],
         totals: {
@@ -53,12 +60,12 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // Get unique product and sale IDs
-    const productIds = [...new Set(saleItems.map(item => item.productId))];
-    const saleIds = [...new Set(saleItems.map(item => item.saleId))];
+    // Get unique product and order IDs
+    const productIds = [...new Set(orderItems.map(item => item.productId))];
+    const orderIds = [...new Set(orderItems.map(item => item.orderId))];
 
-    // Get products and sales data separately
-    const [products, sales] = await Promise.all([
+    // Get products and orders data separately
+    const [products, orders] = await Promise.all([
       withRetry(async () => {
         return prisma.product.findMany({
           where: { id: { in: productIds } },
@@ -73,8 +80,8 @@ export async function GET(req: NextRequest) {
         });
       }, 2, 'reports-menu-items-products'),
       withRetry(async () => {
-        return prisma.sale.findMany({
-          where: { id: { in: saleIds } },
+        return prisma.order.findMany({
+          where: { id: { in: orderIds } },
           select: {
             id: true,
             outlet: true,
@@ -83,21 +90,21 @@ export async function GET(req: NextRequest) {
           },
           orderBy: { id: 'asc' }
         });
-      }, 2, 'reports-menu-items-sales')
+      }, 2, 'reports-menu-items-orders')
     ]);
 
     // Create lookup maps
     const productMap = new Map(products.map(p => [p.id, p]));
-    const saleMap = new Map(sales.map(s => [s.id, s]));
+    const orderMap = new Map(orders.map(o => [o.id, o]));
 
     // Group by product and calculate totals
     const menuItemsMap = new Map();
     
-    for (const item of saleItems) {
+    for (const item of orderItems) {
       const product = productMap.get(item.productId);
-      const sale = saleMap.get(item.saleId);
+      const order = orderMap.get(item.orderId);
       
-      if (!product || !sale) continue; // Skip if data not found
+      if (!product || !order) continue; // Skip if data not found
       
       const productKey = `${product.code} - ${product.name}`;
       
@@ -117,18 +124,18 @@ export async function GET(req: NextRequest) {
       }
       
       const menuItem = menuItemsMap.get(productKey);
-      menuItem.totalQuantity += 1;
-      menuItem.totalRevenue += item.price;
-      menuItem.totalHppValue += Math.round(item.price * product.hppPct);
-      menuItem.outlets.add(sale.outlet);
-      menuItem.locations.add(sale.location);
+      menuItem.totalQuantity += item.quantity; // Use quantity from order item
+      menuItem.totalRevenue += (item.price * item.quantity); // price * quantity
+      menuItem.totalHppValue += Math.round((item.price * item.quantity) * product.hppPct);
+      menuItem.outlets.add(order.outlet);
+      menuItem.locations.add(order.location);
       menuItem.sales.push({
-        barcode: item.barcode,
+        quantity: item.quantity,
         price: item.price,
-        outlet: sale.outlet,
-        location: sale.location,
-        orderDate: sale.orderDate,
-        status: item.status,
+        outlet: order.outlet,
+        location: order.location,
+        orderDate: order.orderDate,
+        orderId: order.id,
       });
     }
 

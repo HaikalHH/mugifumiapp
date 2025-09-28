@@ -2,6 +2,9 @@
 import { useEffect, useState } from "react";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
+import { Button } from "../../components/ui/button";
+import { DateTimePicker } from "../../components/ui/date-picker";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui/table";
 import { useAuth } from "../providers";
 
@@ -10,15 +13,15 @@ export default function ReportsPage() {
   const [inv, setInv] = useState<any>(null);
   const [sales, setSales] = useState<any>(null);
   const [menuItems, setMenuItems] = useState<any>(null);
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
-  const [menuLocation, setMenuLocation] = useState("");
-  const [menuOutlet, setMenuOutlet] = useState("");
+  const [from, setFrom] = useState<Date | undefined>(undefined);
+  const [to, setTo] = useState<Date | undefined>(undefined);
+  const [menuLocation, setMenuLocation] = useState("all");
+  const [menuOutlet, setMenuOutlet] = useState("all");
 
   const load = async () => {
     const qs: string[] = [];
-    if (from) qs.push(`from=${encodeURIComponent(new Date(from).toISOString())}`);
-    if (to) qs.push(`to=${encodeURIComponent(new Date(to).toISOString())}`);
+    if (from) qs.push(`from=${encodeURIComponent(from.toISOString())}`);
+    if (to) qs.push(`to=${encodeURIComponent(to.toISOString())}`);
     const query = qs.length ? `?${qs.join("&")}` : "";
     const [a, b, c] = await Promise.all([
       fetch(`/api/reports/inventory${query}`).then((r) => r.json()),
@@ -32,10 +35,10 @@ export default function ReportsPage() {
 
   const loadMenuItems = async () => {
     const qs: string[] = [];
-    if (from) qs.push(`from=${encodeURIComponent(new Date(from).toISOString())}`);
-    if (to) qs.push(`to=${encodeURIComponent(new Date(to).toISOString())}`);
-    if (menuLocation) qs.push(`location=${encodeURIComponent(menuLocation)}`);
-    if (menuOutlet) qs.push(`outlet=${encodeURIComponent(menuOutlet)}`);
+    if (from) qs.push(`from=${encodeURIComponent(from.toISOString())}`);
+    if (to) qs.push(`to=${encodeURIComponent(to.toISOString())}`);
+    if (menuLocation && menuLocation !== "all") qs.push(`location=${encodeURIComponent(menuLocation)}`);
+    if (menuOutlet && menuOutlet !== "all") qs.push(`outlet=${encodeURIComponent(menuOutlet)}`);
     const query = qs.length ? `?${qs.join("&")}` : "";
     const response = await fetch(`/api/reports/menu-items${query}`);
     const data = await response.json();
@@ -71,11 +74,19 @@ export default function ReportsPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
           <div className="flex flex-col gap-1">
             <Label>Periode From</Label>
-            <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+            <DateTimePicker
+              value={from}
+              onChange={setFrom}
+              placeholder="Select start date"
+            />
           </div>
           <div className="flex flex-col gap-1">
             <Label>Periode To</Label>
-            <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+            <DateTimePicker
+              value={to}
+              onChange={setTo}
+              placeholder="Select end date"
+            />
           </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -174,42 +185,44 @@ export default function ReportsPage() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-3">
           <div className="flex flex-col gap-1">
             <Label>Filter by Location</Label>
-            <select 
-              className="border rounded p-2" 
-              value={menuLocation} 
-              onChange={(e) => setMenuLocation(e.target.value)}
-            >
-              <option value="">All Locations</option>
-              <option value="Bandung">Bandung</option>
-              <option value="Jakarta">Jakarta</option>
-            </select>
+            <Select value={menuLocation} onValueChange={setMenuLocation}>
+              <SelectTrigger>
+                <SelectValue placeholder="All Locations" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Locations</SelectItem>
+                <SelectItem value="Bandung">Bandung</SelectItem>
+                <SelectItem value="Jakarta">Jakarta</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div className="flex flex-col gap-1">
             <Label>Filter by Outlet</Label>
-            <select 
-              className="border rounded p-2" 
-              value={menuOutlet} 
-              onChange={(e) => setMenuOutlet(e.target.value)}
-            >
-              <option value="">All Outlets</option>
-              <option value="TOKOPEDIA">Tokopedia</option>
-              <option value="SHOPEE">Shopee</option>
-              <option value="WHATSAPP">WhatsApp</option>
-              <option value="CAFE">Cafe</option>
-              <option value="WHOLESALE">Wholesale</option>
-              <option value="FREE">Free</option>
-            </select>
+            <Select value={menuOutlet} onValueChange={setMenuOutlet}>
+              <SelectTrigger>
+                <SelectValue placeholder="All Outlets" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Outlets</SelectItem>
+                <SelectItem value="TOKOPEDIA">Tokopedia</SelectItem>
+                <SelectItem value="SHOPEE">Shopee</SelectItem>
+                <SelectItem value="WHATSAPP">WhatsApp</SelectItem>
+                <SelectItem value="CAFE">Cafe</SelectItem>
+                <SelectItem value="WHOLESALE">Wholesale</SelectItem>
+                <SelectItem value="FREE">Free</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div className="flex flex-col gap-1 justify-end">
-            <button 
-              className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded text-sm"
+            <Button 
+              variant="outline"
               onClick={() => {
-                setMenuLocation("");
-                setMenuOutlet("");
+                setMenuLocation("all");
+                setMenuOutlet("all");
               }}
             >
               Clear Filters
-            </button>
+            </Button>
           </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
