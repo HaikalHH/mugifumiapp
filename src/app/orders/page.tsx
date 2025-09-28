@@ -17,6 +17,8 @@ type Order = {
   customer?: string | null; 
   status: string;
   totalAmount?: number | null;
+  discount?: number | null;
+  actPayout?: number | null;
   items: Array<{
     id: number;
     productId: number;
@@ -26,7 +28,12 @@ type Order = {
       id: number;
       code: string;
       name: string;
+      price?: number;
     };
+  }>;
+  deliveries?: Array<{
+    id: number;
+    status: string;
   }>;
 };
 
@@ -557,14 +564,14 @@ export default function OrdersPage() {
                 <TableCell>{order.customer || "-"}</TableCell>
                 <TableCell>{new Date(order.orderDate).toLocaleDateString()}</TableCell>
                 <TableCell>
-                  <Badge color={order.status === "confirmed" ? "green" : order.status === "cancelled" ? "red" : "yellow"}>
+                  <Badge color={order.status === "confirmed" ? "green" : order.status === "cancelled" ? "red" : "gray"}>
                     {order.status}
                   </Badge>
                 </TableCell>
                 <TableCell>
                   <Badge color={
                     order.deliveries && order.deliveries.length > 0 
-                      ? (order.deliveries[0].status === "delivered" ? "green" : "yellow")
+                      ? (order.deliveries[0].status === "delivered" ? "green" : "gray")
                       : "gray"
                   }>
                     {order.deliveries && order.deliveries.length > 0 
