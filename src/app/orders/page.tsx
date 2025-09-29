@@ -382,6 +382,28 @@ export default function OrdersPage() {
             </DialogTitle>
           </DialogHeader>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {/* Outlet selector (enabled in edit mode) */}
+            <div className="flex flex-col gap-1">
+              <Label>Outlet</Label>
+              <Select 
+                value={(editingOrderId ? editingOutlet : outlet)} 
+                onValueChange={(v) => {
+                  if (editingOrderId) setEditingOutlet(v); else setOutlet(v);
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Pilih Outlet" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Tokopedia">Tokopedia</SelectItem>
+                  <SelectItem value="Shopee">Shopee</SelectItem>
+                  <SelectItem value="WhatsApp">WhatsApp</SelectItem>
+                  <SelectItem value="Cafe">Cafe</SelectItem>
+                  <SelectItem value="Wholesale">Wholesale</SelectItem>
+                  <SelectItem value="Free">Free</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             <div className="flex flex-col gap-1">
               <Label>
                 {(editingOrderId ? editingOutlet : outlet) === "Tokopedia" || (editingOrderId ? editingOutlet : outlet) === "Shopee" ? "ID Pesanan *" : 
@@ -439,8 +461,19 @@ export default function OrdersPage() {
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <div className="font-medium">Order Items</div>
-              <Button onClick={openProductModal} type="button">Add Item</Button>
+              <Button 
+                onClick={openProductModal} 
+                type="button"
+                disabled={editingOrderId && orders.find(o => o.id === editingOrderId)?.deliveries && orders.find(o => o.id === editingOrderId)?.deliveries!.length > 0}
+              >
+                Add Item
+              </Button>
             </div>
+            {editingOrderId && orders.find(o => o.id === editingOrderId)?.deliveries && orders.find(o => o.id === editingOrderId)?.deliveries!.length > 0 && (
+              <div className="text-sm text-amber-600 bg-amber-50 p-2 rounded">
+                ⚠️ This order has been delivered. Items cannot be modified.
+              </div>
+            )}
             <Table>
               <TableHeader>
                 <TableRow>
@@ -468,7 +501,14 @@ export default function OrdersPage() {
                       {item.product?.price ? (item.product.price * item.quantity).toLocaleString("id-ID") : "0"}
                     </TableCell>
                     <TableCell className="text-center">
-                      <Button variant="link" className="text-red-600 p-0 h-auto" onClick={() => removeItem(idx)}>Remove</Button>
+                      <Button 
+                        variant="link" 
+                        className="text-red-600 p-0 h-auto" 
+                        onClick={() => removeItem(idx)}
+                        disabled={editingOrderId && orders.find(o => o.id === editingOrderId)?.deliveries && orders.find(o => o.id === editingOrderId)?.deliveries!.length > 0}
+                      >
+                        Remove
+                      </Button>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -559,7 +599,16 @@ export default function OrdersPage() {
             {orders.map((order) => (
               <TableRow key={order.id}>
                 <TableCell>{order.id}</TableCell>
-                <TableCell>{order.outlet}</TableCell>
+                <TableCell>
+                  <div className="flex items-center gap-2">
+                    <span>{order.outlet}</span>
+                    {(order.outlet === "Tokopedia" || order.outlet === "Shopee") && (
+                      <Badge color={order.actPayout && Number(order.actPayout) > 0 ? "green" : "red"}>
+                        {order.actPayout && Number(order.actPayout) > 0 ? "Paid" : "Not Paid"}
+                      </Badge>
+                    )}
+                  </div>
+                </TableCell>
                 <TableCell>{order.location}</TableCell>
                 <TableCell>{order.customer || "-"}</TableCell>
                 <TableCell>{new Date(order.orderDate).toLocaleDateString()}</TableCell>
@@ -595,7 +644,6 @@ export default function OrdersPage() {
                       variant="link" 
                       className="p-0 h-auto"
                       onClick={() => handleEditOrder(order.id)}
-                      disabled={order.deliveries && order.deliveries.length > 0}
                     >
                       Edit
                     </Button>

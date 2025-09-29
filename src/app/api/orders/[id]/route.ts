@@ -37,16 +37,19 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: "outlet and location are required" }, { status: 400 });
     }
 
-    if (!items || items.length === 0) {
-      return NextResponse.json({ error: "at least one item is required" }, { status: 400 });
-    }
-
     // Check if order exists
     const existingOrder = await withRetry(async () => {
       return prisma.order.findUnique({
         where: { id: orderId },
         include: {
-          deliveries: true
+          deliveries: true,
+          items: {
+            select: {
+              productId: true,
+              quantity: true,
+              price: true
+            }
+          }
         }
       });
     }, 2, 'order-update-find');
@@ -55,27 +58,33 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: "Order not found" }, { status: 404 });
     }
 
-    // Check if order has deliveries (cannot edit if already delivered)
-    if (existingOrder.deliveries.length > 0) {
-      return NextResponse.json({ error: "Cannot edit order that has been delivered" }, { status: 400 });
+    const isDelivered = existingOrder.deliveries.length > 0;
+    // If not delivered, we still require at least one item in payload
+    if (!isDelivered && (!items || items.length === 0)) {
+      return NextResponse.json({ error: "at least one item is required" }, { status: 400 });
     }
 
-    // Get product prices
-    const productIds = items.map(item => item.productId);
-    const products = await withRetry(async () => {
-      return prisma.product.findMany({
-        where: { id: { in: productIds } },
-        select: { id: true, price: true }
-      });
-    }, 2, 'order-update-products');
+    // Build item set and subtotal source
+    let subtotal = 0;
+    let resolvedItems: Array<{ productId: number; quantity: number; price: number }> = [];
 
-    const productMap = new Map(products.map(p => [p.id, p.price]));
-    
-    // Calculate total
-    const subtotal = items.reduce((sum, item) => {
-      const price = productMap.get(item.productId) || 0;
-      return sum + (price * item.quantity);
-    }, 0);
+    if (isDelivered) {
+      // Lock items: use existing order items and their recorded prices
+      resolvedItems = existingOrder.items.map(it => ({ productId: it.productId, quantity: it.quantity, price: it.price }));
+      subtotal = resolvedItems.reduce((sum, it) => sum + (it.price * it.quantity), 0);
+    } else {
+      // Resolve latest prices for provided items
+      const productIds = (items || []).map(item => item.productId);
+      const products = await withRetry(async () => {
+        return prisma.product.findMany({
+          where: { id: { in: productIds } },
+          select: { id: true, price: true }
+        });
+      }, 2, 'order-update-products');
+      const productMap = new Map(products.map(p => [p.id, p.price]));
+      resolvedItems = (items || []).map(it => ({ productId: it.productId, quantity: it.quantity, price: productMap.get(it.productId) || 0 }));
+      subtotal = resolvedItems.reduce((sum, it) => sum + (it.price * it.quantity), 0);
+    }
 
     const totalAmount = discount 
       ? Math.round(subtotal * (1 - discount / 100))
@@ -84,10 +93,12 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     // Use transaction to update order and items
     const updatedOrder = await withRetry(async () => {
       return prisma.$transaction(async (tx) => {
-        // Delete existing order items
-        await tx.orderItem.deleteMany({
-          where: { orderId: orderId }
-        });
+        if (!isDelivered) {
+          // Replace items only if not delivered
+          await tx.orderItem.deleteMany({
+            where: { orderId: orderId }
+          });
+        }
 
         // Update order
         const order = await tx.order.update({
@@ -138,17 +149,18 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
           }
         });
 
-        // Create new order items
-        for (const item of items) {
-          const price = productMap.get(item.productId) || 0;
-          await tx.orderItem.create({
-            data: {
-              orderId: orderId,
-              productId: item.productId,
-              quantity: item.quantity,
-              price: price
-            }
-          });
+        if (!isDelivered) {
+          // Create new order items
+          for (const item of resolvedItems) {
+            await tx.orderItem.create({
+              data: {
+                orderId: orderId,
+                productId: item.productId,
+                quantity: item.quantity,
+                price: item.price
+              }
+            });
+          }
         }
 
         return order;
