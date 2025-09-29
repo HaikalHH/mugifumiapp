@@ -313,6 +313,9 @@ export default function OrdersPage() {
     return discount > 0 ? Math.round(subtotal * (1 - discount / 100)) : subtotal;
   };
 
+  const editingOrder = editingOrderId ? orders.find(o => o.id === editingOrderId) : null;
+  const isEditingDelivered = Boolean(editingOrder?.deliveries && editingOrder.deliveries.length > 0);
+
   return (
     <main className="p-6 space-y-6">
       <h1 className="text-xl font-semibold">Orders</h1>
@@ -464,12 +467,12 @@ export default function OrdersPage() {
               <Button 
                 onClick={openProductModal} 
                 type="button"
-                disabled={editingOrderId && orders.find(o => o.id === editingOrderId)?.deliveries && orders.find(o => o.id === editingOrderId)?.deliveries!.length > 0}
+                disabled={isEditingDelivered}
               >
                 Add Item
               </Button>
             </div>
-            {editingOrderId && orders.find(o => o.id === editingOrderId)?.deliveries && orders.find(o => o.id === editingOrderId)?.deliveries!.length > 0 && (
+            {isEditingDelivered && (
               <div className="text-sm text-amber-600 bg-amber-50 p-2 rounded">
                 ⚠️ This order has been delivered. Items cannot be modified.
               </div>
@@ -505,7 +508,7 @@ export default function OrdersPage() {
                         variant="link" 
                         className="text-red-600 p-0 h-auto" 
                         onClick={() => removeItem(idx)}
-                        disabled={editingOrderId && orders.find(o => o.id === editingOrderId)?.deliveries && orders.find(o => o.id === editingOrderId)?.deliveries!.length > 0}
+                        disabled={isEditingDelivered}
                       >
                         Remove
                       </Button>
