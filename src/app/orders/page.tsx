@@ -295,6 +295,35 @@ export default function OrdersPage() {
     });
     
     if (res.ok) {
+      // Send WhatsApp notification only on create (not on edit)
+      if (!editingOrderId) {
+        try {
+          const dest = (editingOrderId ? editingLocation : location) === "Jakarta" ? "628986723926" : "6281320699662";
+          const orderOutlet = editingOrderId ? editingOutlet : outlet;
+          const orderLocation = editingOrderId ? editingLocation : location;
+          const orderCustomer = form.customer || "-";
+          const orderTotal = calculateTotal();
+          const lines = selectedItems.map((it) => {
+            const name = it.product?.name || `#${it.productId}`;
+            const price = it.product?.price || 0;
+            const subtotal = price * it.quantity;
+            return `- ${name} x${it.quantity} @ Rp ${price.toLocaleString("id-ID")} = Rp ${subtotal.toLocaleString("id-ID")}`;
+          });
+          const msg = [
+            "Notifikasi Order Baru",
+            `Outlet: ${orderOutlet}`,
+            `Region: ${orderLocation}`,
+            `Customer: ${orderCustomer}`,
+            "Items:",
+            ...lines,
+            `Total: Rp ${orderTotal.toLocaleString("id-ID")}`,
+          ].join("\n");
+          const url = `https://wa.me/${dest}?text=${encodeURIComponent(msg)}`;
+          if (typeof window !== "undefined") {
+            window.open(url, "_blank");
+          }
+        } catch {}
+      }
       setIsModalOpen(false);
       loadOrders();
     } else {
