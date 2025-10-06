@@ -316,6 +316,14 @@ export default function OrdersPage() {
   const editingOrder = editingOrderId ? orders.find(o => o.id === editingOrderId) : null;
   const isEditingDelivered = Boolean(editingOrder?.deliveries && editingOrder.deliveries.length > 0);
 
+  if (username === "Bandung" || username === "Jakarta") {
+    return (
+      <main className="p-6">
+        <div className="text-sm text-gray-600">Akses ditolak.</div>
+      </main>
+    );
+  }
+
   return (
     <main className="p-6 space-y-6">
       <h1 className="text-xl font-semibold">Orders</h1>

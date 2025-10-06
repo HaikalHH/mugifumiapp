@@ -75,6 +75,10 @@ export default function InventoryPage() {
 
   const add = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (username === "Sales") {
+      setScanError("❌ Sales hanya bisa view inventory");
+      return;
+    }
     if (!barcode.trim()) return;
     setScanError("");
     
@@ -122,7 +126,7 @@ export default function InventoryPage() {
           </Select>
         </div>
         <div className="flex">
-          <Button className="w-full" type="submit">Scan In</Button>
+          <Button className="w-full" type="submit" disabled={username === "Sales"}>Scan In</Button>
         </div>
       </form>
       
@@ -294,8 +298,10 @@ export default function InventoryPage() {
                       <td className="p-3 text-center">
                         <div className="flex gap-2 justify-center">
                           <button 
-                            className="text-blue-600 hover:text-blue-800 text-sm font-medium" 
+                            className="text-blue-600 hover:text-blue-800 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed" 
+                            disabled={username === "Sales"}
                             onClick={async () => {
+                              if (username === "Sales") return; 
                               const toLocation = it.location === "Bandung" ? "Jakarta" : "Bandung";
                               await fetch("/api/inventory/move", { 
                                 method: "POST", 
@@ -320,7 +326,7 @@ export default function InventoryPage() {
                           >
                             Move
                           </button>
-                          {username === "Admin" && (
+                          {(username === "Admin") && (
                             <button 
                               className="text-red-600 hover:text-red-800 text-sm font-medium" 
                               onClick={async () => {

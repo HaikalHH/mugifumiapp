@@ -149,6 +149,31 @@ export default function ReportsPage() {
                 ))}
               </TableBody>
             </Table>
+            {sales && sales.byOutletRegion && Object.keys(sales.byOutletRegion).length > 0 && (
+              <div className="mt-4">
+                <h4 className="font-medium mb-1">By Outlet + Region</h4>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-left">Outlet + Region</TableHead>
+                      <TableHead className="text-right">Transactions</TableHead>
+                      <TableHead className="text-right">Actual (Rp)</TableHead>
+                      <TableHead className="text-right">Potongan %</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {Object.entries(sales.byOutletRegion).map(([k, v]: any) => (
+                      <TableRow key={k}>
+                        <TableCell>{k}</TableCell>
+                        <TableCell className="text-right">{v.count}</TableCell>
+                        <TableCell className="text-right">{(v.actual ?? 0).toLocaleString("id-ID")}</TableCell>
+                        <TableCell className="text-right">{v.potonganPct != null ? `${v.potonganPct}%` : "-"}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
           </div>
           <div>
             <h3 className="font-medium">Totals</h3>

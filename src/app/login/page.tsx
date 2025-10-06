@@ -14,13 +14,13 @@ export default function LoginPage() {
     e.preventDefault();
     const u = input.trim().toLowerCase();
     if (!u) { setError("Masukkan username"); return; }
-    const allowed = ["admin", "manager", "bandung", "jakarta"];
+    const allowed = ["admin", "manager", "sales", "bandung", "jakarta"];
     if (!allowed.includes(u)) {
       setError("Username tidak dikenal. Gunakan: Admin, Manager, Bandung, Jakarta");
       return;
     }
     // store in canonical case
-    const canonical = u === "admin" ? "Admin" : u === "manager" ? "Manager" : u === "bandung" ? "Bandung" : "Jakarta";
+    const canonical = u === "admin" ? "Admin" : u === "manager" ? "Manager" : u === "sales" ? "Sales" : u === "bandung" ? "Bandung" : "Jakarta";
     setUsername(canonical as any);
     router.replace("/");
   };
@@ -42,7 +42,7 @@ export default function LoginPage() {
         <div className="text-lg font-semibold text-center">Login</div>
         <div className="space-y-2">
           <label className="text-sm font-medium">Username</label>
-          <input className="border rounded p-2 w-full" placeholder="Admin / Manager / Bandung / Jakarta" value={input} onChange={(e) => setInput(e.target.value)} />
+          <input className="border rounded p-2 w-full" placeholder="Admin / Manager / Sales / Bandung / Jakarta" value={input} onChange={(e) => setInput(e.target.value)} />
           {error && <div className="text-sm text-red-600">{error}</div>}
         </div>
         <button className="w-full border rounded p-2 hover:bg-gray-50" type="submit">Masuk</button>

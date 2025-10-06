@@ -55,7 +55,7 @@ export async function GET(req: NextRequest) {
     }, 2, 'reports-sales-orders');
 
     if (orders.length === 0) {
-      return NextResponse.json({ byOutlet: {}, totalActual: 0, avgPotonganPct: null, sales: [] });
+      return NextResponse.json({ byOutlet: {}, byOutletRegion: {}, totalActual: 0, avgPotonganPct: null, sales: [] });
     }
 
     const needsDiscount = (ot: string) => {
@@ -107,6 +107,7 @@ export async function GET(req: NextRequest) {
     });
 
     const byOutlet: Record<string, { count: number; actual: number; original: number; potongan: number }> = {};
+    const byOutletRegionAgg: Record<string, { count: number; actual: number; original: number; potongan: number }> = {};
     let totalActual = 0;
     let totalOriginal = 0;
     let totalPotongan = 0;
@@ -116,6 +117,13 @@ export async function GET(req: NextRequest) {
       byOutlet[row.outlet].actual += row.actualReceived || 0;
       byOutlet[row.outlet].original += row.originalBeforeDiscount || 0;
       byOutlet[row.outlet].potongan += row.potongan || 0;
+
+      const regionKey = `${row.outlet} ${row.location}`.trim();
+      byOutletRegionAgg[regionKey] ||= { count: 0, actual: 0, original: 0, potongan: 0 };
+      byOutletRegionAgg[regionKey].count += 1;
+      byOutletRegionAgg[regionKey].actual += row.actualReceived || 0;
+      byOutletRegionAgg[regionKey].original += row.originalBeforeDiscount || 0;
+      byOutletRegionAgg[regionKey].potongan += row.potongan || 0;
       totalActual += row.actualReceived || 0;
       totalOriginal += row.originalBeforeDiscount || 0;
       totalPotongan += row.potongan || 0;
@@ -131,9 +139,20 @@ export async function GET(req: NextRequest) {
       ])
     );
     const avgPotonganPct = totalOriginal > 0 ? Math.round(((totalPotongan / totalOriginal) * 100) * 10) / 10 : null;
+
+    const byOutletRegion = Object.fromEntries(
+      Object.entries(byOutletRegionAgg).map(([k, v]) => [
+        k,
+        {
+          count: v.count,
+          actual: v.actual,
+          potonganPct: v.original > 0 ? Math.round(((v.potongan / v.original) * 100) * 10) / 10 : null,
+        },
+      ])
+    );
     
     logRouteComplete('reports-sales', perSale.length);
-    return NextResponse.json({ byOutlet: out, totalActual, avgPotonganPct, sales: perSale });
+    return NextResponse.json({ byOutlet: out, byOutletRegion, totalActual, avgPotonganPct, sales: perSale });
   } catch (error) {
     return NextResponse.json(
       createErrorResponse("build sales report", error), 

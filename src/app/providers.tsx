@@ -2,7 +2,7 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 
-type Role = "Admin" | "Manager" | "Bandung" | "Jakarta";
+type Role = "Admin" | "Manager" | "Sales" | "Bandung" | "Jakarta";
 type AuthState = { username: Role | null; setUsername: (u: Role | null) => void };
 
 const AuthContext = createContext<AuthState>({ username: null, setUsername: () => {} });
@@ -46,7 +46,8 @@ export function hasAccess(username: Role | null, page: "products" | "inventory" 
   const u = String(username).toLowerCase();
   if (u === "admin") return true;
   if (u === "manager") return page === "reports";
-  if (u === "bandung" || u === "jakarta") return page === "inventory" || page === "orders" || page === "delivery";
+  if (u === "sales") return page === "inventory" || page === "orders";
+  if (u === "bandung" || u === "jakarta") return page === "inventory" || page === "delivery";
   return false;
 }
 
