@@ -415,7 +415,7 @@ export default function OrdersPage() {
 
       {/* Create Order Modal */}
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {editingOrderId ? `Edit Order #${editingOrderId}` : `Create Order`} - {editingOrderId ? editingOutlet : outlet} ({editingOrderId ? editingLocation : location})
@@ -514,46 +514,50 @@ export default function OrdersPage() {
                 ⚠️ This order has been delivered. Items cannot be modified.
               </div>
             )}
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="text-left">Product</TableHead>
-                  <TableHead className="text-center">Quantity</TableHead>
-                  <TableHead className="text-right">Price</TableHead>
-                  <TableHead className="text-right">Total</TableHead>
-                  <TableHead className="text-center">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {selectedItems.map((item, idx) => (
-                  <TableRow key={`${item.productId}-${idx}`}>
-                    <TableCell>
-                      <div>
-                        <div className="font-medium">{item.product?.name || "Unknown Product"}</div>
-                        <div className="text-sm text-gray-500">{item.product?.code || "N/A"}</div>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-center">{item.quantity}</TableCell>
-                    <TableCell className="text-right">
-                      {item.product?.price ? item.product.price.toLocaleString("id-ID") : "0"}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {item.product?.price ? (item.product.price * item.quantity).toLocaleString("id-ID") : "0"}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <Button 
-                        variant="link" 
-                        className="text-red-600 p-0 h-auto" 
-                        onClick={() => removeItem(idx)}
-                        disabled={isEditingDelivered}
-                      >
-                        Remove
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <div className="overflow-x-auto">
+              <div className="max-h-[50vh] overflow-y-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-left">Product</TableHead>
+                      <TableHead className="text-center">Quantity</TableHead>
+                      <TableHead className="text-right">Price</TableHead>
+                      <TableHead className="text-right">Total</TableHead>
+                      <TableHead className="text-center">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {selectedItems.map((item, idx) => (
+                      <TableRow key={`${item.productId}-${idx}`}>
+                        <TableCell>
+                          <div>
+                            <div className="font-medium">{item.product?.name || "Unknown Product"}</div>
+                            <div className="text-sm text-gray-500">{item.product?.code || "N/A"}</div>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-center">{item.quantity}</TableCell>
+                        <TableCell className="text-right">
+                          {item.product?.price ? item.product.price.toLocaleString("id-ID") : "0"}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {item.product?.price ? (item.product.price * item.quantity).toLocaleString("id-ID") : "0"}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <Button 
+                            variant="link" 
+                            className="text-red-600 p-0 h-auto" 
+                            onClick={() => removeItem(idx)}
+                            disabled={isEditingDelivered}
+                          >
+                            Remove
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
             {selectedItems.length > 0 && (
               <div className="text-right font-medium">
                 Total: Rp {calculateTotal().toLocaleString("id-ID")}
