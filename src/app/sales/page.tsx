@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui/table";
 import { Badge } from "../../components/ui/badge";
 import { DateTimePicker } from "../../components/ui/date-picker";
+import { getStartOfDayJakarta, getEndOfDayJakarta } from "../../lib/timezone";
 
 type Sale = { id: number; outlet: string; location: string; orderDate: string; customer?: string | null; actPayout?: number | null; shipDate?: string | null };
 
@@ -51,8 +52,14 @@ export default function SalesPage() {
   const [to, setTo] = useState<Date | undefined>(undefined);
   const loadSales = async () => {
     const params = new URLSearchParams({ page: String(page), pageSize: "10" });
-    if (from) params.set("from", from.toISOString());
-    if (to) params.set("to", to.toISOString());
+    if (from) {
+      const fromJakarta = getStartOfDayJakarta(from);
+      params.set("from", fromJakarta.toISOString());
+    }
+    if (to) {
+      const toJakarta = getEndOfDayJakarta(to);
+      params.set("to", toJakarta.toISOString());
+    }
     const res = await fetch(`/api/sales?${params.toString()}`);
     const data = await res.json();
     setSales(data.rows || []);

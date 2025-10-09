@@ -7,6 +7,7 @@ import { Button } from "../../components/ui/button";
 import { DateTimePicker } from "../../components/ui/date-picker";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui/table";
 import { useAuth } from "../providers";
+import { getStartOfDayJakarta, getEndOfDayJakarta } from "../../lib/timezone";
 
 export default function ReportsPage() {
   const { username } = useAuth();
@@ -20,8 +21,14 @@ export default function ReportsPage() {
 
   const load = async () => {
     const qs: string[] = [];
-    if (from) qs.push(`from=${encodeURIComponent(from.toISOString())}`);
-    if (to) qs.push(`to=${encodeURIComponent(to.toISOString())}`);
+    if (from) {
+      const fromJakarta = getStartOfDayJakarta(from);
+      qs.push(`from=${encodeURIComponent(fromJakarta.toISOString())}`);
+    }
+    if (to) {
+      const toJakarta = getEndOfDayJakarta(to);
+      qs.push(`to=${encodeURIComponent(toJakarta.toISOString())}`);
+    }
     const query = qs.length ? `?${qs.join("&")}` : "";
     const [a, b, c] = await Promise.all([
       fetch(`/api/reports/inventory${query}`).then((r) => r.json()),
@@ -35,8 +42,14 @@ export default function ReportsPage() {
 
   const loadMenuItems = async () => {
     const qs: string[] = [];
-    if (from) qs.push(`from=${encodeURIComponent(from.toISOString())}`);
-    if (to) qs.push(`to=${encodeURIComponent(to.toISOString())}`);
+    if (from) {
+      const fromJakarta = getStartOfDayJakarta(from);
+      qs.push(`from=${encodeURIComponent(fromJakarta.toISOString())}`);
+    }
+    if (to) {
+      const toJakarta = getEndOfDayJakarta(to);
+      qs.push(`to=${encodeURIComponent(toJakarta.toISOString())}`);
+    }
     if (menuLocation && menuLocation !== "all") qs.push(`location=${encodeURIComponent(menuLocation)}`);
     if (menuOutlet && menuOutlet !== "all") qs.push(`outlet=${encodeURIComponent(menuOutlet)}`);
     const query = qs.length ? `?${qs.join("&")}` : "";

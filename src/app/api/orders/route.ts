@@ -16,14 +16,12 @@ export async function GET(req: NextRequest) {
     if (from || to) {
       where.orderDate = {};
       if (from) {
-        const fromDate = new Date(from);
-        fromDate.setHours(0, 0, 0, 0); // Start of day
-        where.orderDate.gte = fromDate;
+        // Frontend already sends Asia/Jakarta timezone converted to UTC
+        where.orderDate.gte = new Date(from);
       }
       if (to) {
-        const toDate = new Date(to);
-        toDate.setHours(23, 59, 59, 999); // End of day
-        where.orderDate.lte = toDate;
+        // Frontend already sends Asia/Jakarta timezone converted to UTC
+        where.orderDate.lte = new Date(to);
       }
     }
 

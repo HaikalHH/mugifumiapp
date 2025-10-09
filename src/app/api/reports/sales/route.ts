@@ -18,14 +18,12 @@ export async function GET(req: NextRequest) {
     if (from || to) {
       whereOrder.orderDate = {};
       if (from) {
-        const fromDate = new Date(from);
-        fromDate.setHours(0, 0, 0, 0); // Start of day
-        whereOrder.orderDate.gte = fromDate;
+        // Frontend already sends Asia/Jakarta timezone converted to UTC
+        whereOrder.orderDate.gte = new Date(from);
       }
       if (to) {
-        const toDate = new Date(to);
-        toDate.setHours(23, 59, 59, 999); // End of day
-        whereOrder.orderDate.lte = toDate;
+        // Frontend already sends Asia/Jakarta timezone converted to UTC
+        whereOrder.orderDate.lte = new Date(to);
       }
     }
 
@@ -66,6 +64,7 @@ export async function GET(req: NextRequest) {
     const perSale = orders.map((order) => {
       const orderItems = order.items || [];
       const isCafe = order.outlet.toLowerCase() === "cafe";
+      const isFree = order.outlet.toLowerCase() === "free";
       
       // Calculate subtotal from order items
       const preDiscountSubtotal = orderItems.reduce((acc: number, item: any) => acc + (item.price * item.quantity), 0);
@@ -76,18 +75,24 @@ export async function GET(req: NextRequest) {
       const expectedTotal = order.totalAmount || discountedSubtotal;
 
       // For orders, actual received is actPayout if available, otherwise totalAmount
-      const actual = order.actPayout || order.totalAmount || null;
+      // For Free outlet, set to 0
+      const actual = isFree ? 0 : (order.actPayout || order.totalAmount || null);
 
       // Potongan calculation for orders:
+      // - Free: 100% (all is potongan since actual is 0)
       // - Cafe: original (pre-discount) minus actual (discounted)
       // - Others: difference between pre-discount and actual
-      const potongan = isCafe
-        ? (preDiscountSubtotal - discountedSubtotal)
-        : (actual != null ? (preDiscountSubtotal - actual) : null);
+      const potongan = isFree
+        ? preDiscountSubtotal
+        : (isCafe
+          ? (preDiscountSubtotal - discountedSubtotal)
+          : (actual != null ? (preDiscountSubtotal - actual) : null));
 
-      const potonganPct = isCafe
-        ? (preDiscountSubtotal > 0 ? Math.round(((potongan as number / preDiscountSubtotal) * 100) * 10) / 10 : null)
-        : (potongan != null && preDiscountSubtotal > 0 ? Math.round((potongan / preDiscountSubtotal) * 1000) / 10 : null);
+      const potonganPct = isFree
+        ? 100
+        : (isCafe
+          ? (preDiscountSubtotal > 0 ? Math.round(((potongan as number / preDiscountSubtotal) * 100) * 10) / 10 : null)
+          : (potongan != null && preDiscountSubtotal > 0 ? Math.round((potongan / preDiscountSubtotal) * 1000) / 10 : null));
 
       return {
         id: order.id,

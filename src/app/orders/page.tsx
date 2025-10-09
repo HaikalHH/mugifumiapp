@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui/table";
 import { Badge } from "../../components/ui/badge";
 import { DateTimePicker } from "../../components/ui/date-picker";
+import { toUTCForJakarta, getStartOfDayJakarta, getEndOfDayJakarta } from "../../lib/timezone";
 
 type Order = { 
   id: number; 
@@ -92,8 +93,14 @@ export default function OrdersPage() {
 
   const loadOrders = async () => {
     const params = new URLSearchParams({ page: String(page), pageSize: "10" });
-    if (from) params.set("from", from.toISOString());
-    if (to) params.set("to", to.toISOString());
+    if (from) {
+      const fromJakarta = getStartOfDayJakarta(from);
+      params.set("from", fromJakarta.toISOString());
+    }
+    if (to) {
+      const toJakarta = getEndOfDayJakarta(to);
+      params.set("to", toJakarta.toISOString());
+    }
     const res = await fetch(`/api/orders?${params.toString()}`);
     const data = await res.json();
     setOrders(data.rows || []);
@@ -270,14 +277,17 @@ export default function OrdersPage() {
       return;
     }
 
+    // Convert order date to UTC for Jakarta timezone
+    const orderDateUTC = toUTCForJakarta(form.orderDate);
+
     const payload: any = {
       outlet: editingOrderId ? editingOutlet : outlet,
       location: editingOrderId ? editingLocation : location,
       customer: form.customer,
       status: form.status,
-      orderDate: form.orderDate.toISOString(),
+      orderDate: orderDateUTC.toISOString(),
       discount: form.discount ? Number(form.discount) : null,
-      actPayout: ((editingOrderId ? editingOutlet : outlet) === "Tokopedia" || (editingOrderId ? editingOutlet : outlet) === "Shopee") && form.actPayout ? Number(form.actPayout) : null,
+      actPayout: ((editingOrderId ? editingOutlet : outlet) === "Tokopedia" || (editingOrderId ? editingOutlet : outlet) === "Shopee" || (editingOrderId ? editingOutlet : outlet) === "Cafe") && form.actPayout ? Number(form.actPayout) : null,
       items: selectedItems.map(item => ({
         productId: item.productId,
         quantity: item.quantity
@@ -474,7 +484,7 @@ export default function OrdersPage() {
               <Label>Discount %</Label>
               <Input type="number" placeholder="e.g. 10" value={form.discount} onChange={(e) => setForm({ ...form, discount: e.target.value })} />
             </div>
-            {((editingOrderId ? editingOutlet : outlet) === "Tokopedia" || (editingOrderId ? editingOutlet : outlet) === "Shopee") && (
+            {((editingOrderId ? editingOutlet : outlet) === "Tokopedia" || (editingOrderId ? editingOutlet : outlet) === "Shopee" || (editingOrderId ? editingOutlet : outlet) === "Cafe") && (
               <>
                 <div className="flex flex-col gap-1">
                   <Label>Estimasi Total (Rp)</Label>
@@ -646,9 +656,11 @@ export default function OrdersPage() {
                 <TableCell>
                   <div className="flex items-center gap-2">
                     <span>{order.outlet}</span>
-                    {(order.outlet === "Tokopedia" || order.outlet === "Shopee") && (
+                    {(order.outlet === "Tokopedia" || order.outlet === "Shopee" || order.outlet === "Cafe") && (
                       <Badge color={order.actPayout && Number(order.actPayout) > 0 ? "green" : "red"}>
-                        {order.actPayout && Number(order.actPayout) > 0 ? "Paid" : "Not Paid"}
+                        {order.actPayout && Number(order.actPayout) > 0 
+                          ? `Paid - Rp ${Number(order.actPayout).toLocaleString("id-ID")}` 
+                          : "Not Paid"}
                       </Badge>
                     )}
                   </div>

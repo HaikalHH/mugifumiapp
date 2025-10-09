@@ -15,8 +15,14 @@ export async function GET(req: NextRequest) {
     const where: any = {};
     if (from || to) {
       where.orderDate = {};
-      if (from) where.orderDate.gte = new Date(from);
-      if (to) where.orderDate.lte = new Date(to);
+      if (from) {
+        // Frontend already sends Asia/Jakarta timezone converted to UTC
+        where.orderDate.gte = new Date(from);
+      }
+      if (to) {
+        // Frontend already sends Asia/Jakarta timezone converted to UTC
+        where.orderDate.lte = new Date(to);
+      }
     }
 
     // Use sequential queries instead of Promise.all for better reliability
