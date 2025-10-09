@@ -180,7 +180,9 @@ export default function InventoryPage() {
                       <td className="p-2">{k}</td>
                       <td className="p-2 text-right font-medium">{stockInfo.total}</td>
                       <td className="p-2 text-right text-orange-600">{stockInfo.reserved}</td>
-                      <td className="p-2 text-right text-green-600">{stockInfo.available}</td>
+                      <td className={`p-2 text-right font-medium ${stockInfo.available < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                        {stockInfo.available}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -205,7 +207,9 @@ export default function InventoryPage() {
                   <td className="p-2">{k}</td>
                   <td className="p-2 text-right font-medium">{stockInfo.total}</td>
                   <td className="p-2 text-right text-orange-600">{stockInfo.reserved}</td>
-                  <td className="p-2 text-right text-green-600">{stockInfo.available}</td>
+                  <td className={`p-2 text-right font-medium ${stockInfo.available < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                    {stockInfo.available}
+                  </td>
                 </tr>
               ))}
             </tbody>

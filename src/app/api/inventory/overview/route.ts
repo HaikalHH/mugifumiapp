@@ -150,12 +150,10 @@ export async function GET() {
     }
 
     // Calculate available stock (total - reserved)
+    // Allow negative values to show over-order situations
     for (const loc of Object.keys(byLocation)) {
       for (const key of Object.keys(byLocation[loc])) {
-        byLocation[loc][key].available = Math.max(
-          0,
-          byLocation[loc][key].total - byLocation[loc][key].reserved
-        );
+        byLocation[loc][key].available = byLocation[loc][key].total - byLocation[loc][key].reserved;
       }
     }
 
