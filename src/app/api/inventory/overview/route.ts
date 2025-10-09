@@ -2,6 +2,12 @@ import { NextResponse } from "next/server";
 import { prisma } from "../../../../lib/prisma";
 import { withRetry, createErrorResponse, logRouteStart, logRouteComplete } from "../../../../lib/db-utils";
 
+interface StockInfo {
+  total: number;
+  reserved: number;
+  available: number;
+}
+
 export async function GET() {
   try {
     logRouteStart('inventory-overview');
@@ -18,7 +24,7 @@ export async function GET() {
       });
     }, 2, 'inventory-overview-products');
 
-    // Then get inventory items for counting
+    // Then get inventory items for counting (total stock)
     const items = await withRetry(async () => {
       return prisma.inventory.findMany({
         where: { status: "READY" },
@@ -31,6 +37,50 @@ export async function GET() {
       });
     }, 2, 'inventory-overview-items');
 
+    // Get reserved stock (orders that haven't been fully delivered)
+    // Step 1: Get all order items from active orders
+    const orderItems = await withRetry(async () => {
+      return prisma.orderItem.findMany({
+        where: {
+          order: {
+            status: {
+              notIn: ['cancelled', 'completed']
+            }
+          }
+        },
+        select: {
+          productId: true,
+          quantity: true,
+          order: {
+            select: {
+              id: true,
+              location: true
+            }
+          }
+        }
+      });
+    }, 2, 'inventory-overview-orderitems');
+
+    // Step 2: Get all delivered items
+    const deliveryItems = await withRetry(async () => {
+      return prisma.deliveryItem.findMany({
+        select: {
+          productId: true,
+          delivery: {
+            select: {
+              orderId: true,
+              status: true,
+              order: {
+                select: {
+                  location: true
+                }
+              }
+            }
+          }
+        }
+      });
+    }, 2, 'inventory-overview-deliveryitems');
+
     // Create product map for efficient lookup
     const productMap = new Map(products.map(p => [p.id, p]));
 
@@ -40,27 +90,85 @@ export async function GET() {
     knownLocations.add("Bandung");
     knownLocations.add("Jakarta");
 
-    const byLocation: Record<string, Record<string, number>> = {};
+    // Initialize data structures
+    const byLocation: Record<string, Record<string, StockInfo>> = {};
     for (const loc of Array.from(knownLocations)) {
       byLocation[loc] = {};
-      for (const key of allProductKeys) byLocation[loc][key] = 0;
+      for (const key of allProductKeys) {
+        byLocation[loc][key] = { total: 0, reserved: 0, available: 0 };
+      }
     }
 
-    // Process items with manual join
+    // Calculate total stock from inventory
     for (const item of items) {
       const product = productMap.get(item.productId);
       if (product) {
         const loc = item.location;
         const key = `${product.name} (${product.code})`;
-        byLocation[loc][key] = (byLocation[loc][key] || 0) + 1;
+        byLocation[loc][key].total++;
       }
     }
 
-    const all: Record<string, number> = {};
-    for (const key of allProductKeys) all[key] = 0;
+    // Calculate reserved stock
+    // First, count ordered quantities by product and location
+    const orderedByProductLocation: Record<number, Record<string, number>> = {};
+    for (const orderItem of orderItems) {
+      const productId = orderItem.productId;
+      const location = orderItem.order.location;
+      
+      if (!orderedByProductLocation[productId]) {
+        orderedByProductLocation[productId] = {};
+      }
+      if (!orderedByProductLocation[productId][location]) {
+        orderedByProductLocation[productId][location] = 0;
+      }
+      orderedByProductLocation[productId][location] += orderItem.quantity;
+    }
+
+    // Then, subtract delivered quantities
+    for (const deliveryItem of deliveryItems) {
+      const productId = deliveryItem.productId;
+      const location = deliveryItem.delivery.order.location;
+      
+      if (orderedByProductLocation[productId] && orderedByProductLocation[productId][location]) {
+        orderedByProductLocation[productId][location] -= 1;
+      }
+    }
+
+    // Apply reserved stock to byLocation
+    for (const [productIdStr, locationCounts] of Object.entries(orderedByProductLocation)) {
+      const productId = parseInt(productIdStr);
+      const product = productMap.get(productId);
+      if (product) {
+        const key = `${product.name} (${product.code})`;
+        for (const [location, count] of Object.entries(locationCounts)) {
+          if (byLocation[location] && byLocation[location][key]) {
+            byLocation[location][key].reserved = Math.max(0, count);
+          }
+        }
+      }
+    }
+
+    // Calculate available stock (total - reserved)
+    for (const loc of Object.keys(byLocation)) {
+      for (const key of Object.keys(byLocation[loc])) {
+        byLocation[loc][key].available = Math.max(
+          0,
+          byLocation[loc][key].total - byLocation[loc][key].reserved
+        );
+      }
+    }
+
+    // Calculate totals across all locations
+    const all: Record<string, StockInfo> = {};
+    for (const key of allProductKeys) {
+      all[key] = { total: 0, reserved: 0, available: 0 };
+    }
     for (const loc of Object.keys(byLocation)) {
       for (const k of Object.keys(byLocation[loc])) {
-        all[k] = (all[k] || 0) + byLocation[loc][k];
+        all[k].total += byLocation[loc][k].total;
+        all[k].reserved += byLocation[loc][k].reserved;
+        all[k].available += byLocation[loc][k].available;
       }
     }
 

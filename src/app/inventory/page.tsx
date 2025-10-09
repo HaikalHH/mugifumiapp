@@ -20,7 +20,14 @@ export default function InventoryPage() {
   const { username } = useAuth();
   const [barcode, setBarcode] = useState("");
   const [location, setLocation] = useState<string>(() => getInitialLocation());
-  const [overview, setOverview] = useState<{ byLocation: Record<string, Record<string, number>>; all: Record<string, number> } | null>(null);
+  
+  interface StockInfo {
+    total: number;
+    reserved: number;
+    available: number;
+  }
+  
+  const [overview, setOverview] = useState<{ byLocation: Record<string, Record<string, StockInfo>>; all: Record<string, StockInfo> } | null>(null);
   const [detailModal, setDetailModal] = useState<{ 
     open: boolean; 
     productKey: string | null; 
@@ -145,10 +152,18 @@ export default function InventoryPage() {
           <h2 className="font-medium mb-2">By Location</h2>
           {overview && Object.entries(overview.byLocation).map(([loc, rows]) => (
             <div key={loc} className="mb-4">
-              <div className="font-medium">{loc}</div>
+              <div className="font-medium mb-2">{loc}</div>
               <table className="w-full text-sm border">
+                <thead className="bg-gray-50 border-b">
+                  <tr>
+                    <th className="p-2 text-left font-medium">Menu</th>
+                    <th className="p-2 text-right font-medium">Total</th>
+                    <th className="p-2 text-right font-medium">Reserved</th>
+                    <th className="p-2 text-right font-medium">Available</th>
+                  </tr>
+                </thead>
                 <tbody>
-                  {Object.entries(rows).map(([k, v]) => (
+                  {Object.entries(rows).map(([k, stockInfo]) => (
                     <tr key={k} className="border-t hover:bg-gray-50 cursor-pointer" onClick={async () => {
                       const data = await loadInventoryList(k, loc);
                       setDetailModal({ 
@@ -163,7 +178,9 @@ export default function InventoryPage() {
                       });
                     }}>
                       <td className="p-2">{k}</td>
-                      <td className="p-2 text-right">{v}</td>
+                      <td className="p-2 text-right font-medium">{stockInfo.total}</td>
+                      <td className="p-2 text-right text-orange-600">{stockInfo.reserved}</td>
+                      <td className="p-2 text-right text-green-600">{stockInfo.available}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -172,13 +189,23 @@ export default function InventoryPage() {
           ))}
         </div>
         <div>
-          <h2 className="font-medium mb-2">All</h2>
+          <h2 className="font-medium mb-2">All Locations</h2>
           <table className="w-full text-sm border">
+            <thead className="bg-gray-50 border-b">
+              <tr>
+                <th className="p-2 text-left font-medium">Menu</th>
+                <th className="p-2 text-right font-medium">Total</th>
+                <th className="p-2 text-right font-medium">Reserved</th>
+                <th className="p-2 text-right font-medium">Available</th>
+              </tr>
+            </thead>
             <tbody>
-              {overview && Object.entries(overview.all).map(([k, v]) => (
+              {overview && Object.entries(overview.all).map(([k, stockInfo]) => (
                 <tr key={k} className="border-t">
                   <td className="p-2">{k}</td>
-                  <td className="p-2 text-right">{v}</td>
+                  <td className="p-2 text-right font-medium">{stockInfo.total}</td>
+                  <td className="p-2 text-right text-orange-600">{stockInfo.reserved}</td>
+                  <td className="p-2 text-right text-green-600">{stockInfo.available}</td>
                 </tr>
               ))}
             </tbody>
