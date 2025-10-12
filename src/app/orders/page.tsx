@@ -287,7 +287,7 @@ export default function OrdersPage() {
       status: form.status,
       orderDate: orderDateUTC.toISOString(),
       discount: form.discount ? Number(form.discount) : null,
-      actPayout: ((editingOrderId ? editingOutlet : outlet) === "Tokopedia" || (editingOrderId ? editingOutlet : outlet) === "Shopee" || (editingOrderId ? editingOutlet : outlet) === "Cafe") && form.actPayout ? Number(form.actPayout) : null,
+      actPayout: ((editingOrderId ? editingOutlet : outlet) === "Tokopedia" || (editingOrderId ? editingOutlet : outlet) === "Shopee" || (editingOrderId ? editingOutlet : outlet) === "Cafe" || (editingOrderId ? editingOutlet : outlet) === "Wholesale" || (editingOrderId ? editingOutlet : outlet) === "Complain") && form.actPayout ? Number(form.actPayout) : null,
       items: selectedItems.map(item => ({
         productId: item.productId,
         quantity: item.quantity
@@ -379,6 +379,7 @@ export default function OrdersPage() {
               <SelectItem value="WhatsApp">WhatsApp</SelectItem>
               <SelectItem value="Cafe">Cafe</SelectItem>
               <SelectItem value="Wholesale">Wholesale</SelectItem>
+              <SelectItem value="Complain">Complain</SelectItem>
               <SelectItem value="Free">Free</SelectItem>
             </SelectContent>
           </Select>
@@ -450,6 +451,7 @@ export default function OrdersPage() {
                   <SelectItem value="WhatsApp">WhatsApp</SelectItem>
                   <SelectItem value="Cafe">Cafe</SelectItem>
                   <SelectItem value="Wholesale">Wholesale</SelectItem>
+                  <SelectItem value="Complain">Complain</SelectItem>
                   <SelectItem value="Free">Free</SelectItem>
                 </SelectContent>
               </Select>
@@ -484,7 +486,7 @@ export default function OrdersPage() {
               <Label>Discount %</Label>
               <Input type="number" placeholder="e.g. 10" value={form.discount} onChange={(e) => setForm({ ...form, discount: e.target.value })} />
             </div>
-            {((editingOrderId ? editingOutlet : outlet) === "Tokopedia" || (editingOrderId ? editingOutlet : outlet) === "Shopee" || (editingOrderId ? editingOutlet : outlet) === "Cafe") && (
+            {((editingOrderId ? editingOutlet : outlet) === "Tokopedia" || (editingOrderId ? editingOutlet : outlet) === "Shopee" || (editingOrderId ? editingOutlet : outlet) === "Cafe" || (editingOrderId ? editingOutlet : outlet) === "Wholesale" || (editingOrderId ? editingOutlet : outlet) === "Complain") && (
               <>
                 <div className="flex flex-col gap-1">
                   <Label>Estimasi Total (Rp)</Label>
@@ -656,7 +658,7 @@ export default function OrdersPage() {
                 <TableCell>
                   <div className="flex items-center gap-2">
                     <span>{order.outlet}</span>
-                    {(order.outlet === "Tokopedia" || order.outlet === "Shopee" || order.outlet === "Cafe") && (
+                    {(order.outlet === "Tokopedia" || order.outlet === "Shopee" || order.outlet === "Cafe" || order.outlet === "Wholesale" || order.outlet === "Complain") && (
                       <Badge color={order.actPayout && Number(order.actPayout) > 0 ? "green" : "red"}>
                         {order.actPayout && Number(order.actPayout) > 0 
                           ? `Paid - Rp ${Number(order.actPayout).toLocaleString("id-ID")}` 

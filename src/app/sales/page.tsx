@@ -80,7 +80,7 @@ export default function SalesPage() {
       status: (() => {
         const key = outlet.toLowerCase();
         if (key === "tokopedia" || key === "shopee" || key === "whatsapp" || key === "free") return "ordered";
-        if (key === "wholesale") return "shipping";
+        if (key === "wholesale" || key === "complain") return "shipping";
         if (key === "cafe") return "Display";
         return "ordered";
       })(),
@@ -115,11 +115,11 @@ export default function SalesPage() {
     // Basic per-outlet validation
     setError("");
     const key = outlet.toLowerCase();
-    if ((key === "tokopedia" || key === "shopee" || key === "whatsapp" || key === "free" || key === "wholesale" || key === "cafe") && !form.customer.trim()) {
+    if ((key === "tokopedia" || key === "shopee" || key === "whatsapp" || key === "free" || key === "wholesale" || key === "complain" || key === "cafe") && !form.customer.trim()) {
       setError("Customer wajib diisi");
       return;
     }
-    if ((key === "tokopedia" || key === "shopee" || key === "whatsapp" || key === "free" || key === "wholesale" || key === "cafe") && barcodes.length === 0) {
+    if ((key === "tokopedia" || key === "shopee" || key === "whatsapp" || key === "free" || key === "wholesale" || key === "complain" || key === "cafe") && barcodes.length === 0) {
       setError("Tambah minimal 1 item terlebih dahulu");
       return;
     }
@@ -208,6 +208,7 @@ export default function SalesPage() {
               <SelectItem value="WhatsApp">WhatsApp</SelectItem>
               <SelectItem value="Cafe">Cafe</SelectItem>
               <SelectItem value="Wholesale">Wholesale</SelectItem>
+              <SelectItem value="Complain">Complain</SelectItem>
               <SelectItem value="Free">Free</SelectItem>
             </SelectContent>
           </Select>
@@ -258,7 +259,7 @@ export default function SalesPage() {
             <DialogTitle>Create Sale - {outlet} ({location})</DialogTitle>
           </DialogHeader>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {(outlet === "Tokopedia" || outlet === "Shopee" || outlet === "WhatsApp" || outlet === "Free" || outlet === "Wholesale" || outlet === "Cafe") && (
+            {(outlet === "Tokopedia" || outlet === "Shopee" || outlet === "WhatsApp" || outlet === "Free" || outlet === "Wholesale" || outlet === "Complain" || outlet === "Cafe") && (
               <div className="flex flex-col gap-1">
                 <Label>{(outlet === "Tokopedia" || outlet === "Shopee") ? "ID Pesanan *" : "Customer *"}</Label>
                 <Input placeholder={(outlet === "Tokopedia" || outlet === "Shopee") ? "Masukkan ID Pesanan" : "Customer"} value={form.customer} onChange={(e) => setForm({ ...form, customer: e.target.value })} />
@@ -321,7 +322,7 @@ export default function SalesPage() {
                 placeholder="Select ship date"
               />
             </div>
-            {(outlet === "Tokopedia" || outlet === "Shopee" || outlet === "Wholesale") && (
+            {(outlet === "Tokopedia" || outlet === "Shopee" || outlet === "Wholesale" || outlet === "Complain") && (
               <>
                 <div className="flex flex-col gap-1">
                   <Label>Estimasi Total (Rp)</Label>
@@ -338,7 +339,7 @@ export default function SalesPage() {
                 </div>
               </>
             )}
-            {(outlet === "Tokopedia" || outlet === "Shopee" || outlet === "Wholesale") && (
+            {(outlet === "Tokopedia" || outlet === "Shopee" || outlet === "Wholesale" || outlet === "Complain") && (
               <div className="flex flex-col gap-1">
                 <Label>Actual diterima (Rp)</Label>
                 <Input type="number" placeholder="e.g. 100000" value={form.actPayout} onChange={(e) => setForm({ ...form, actPayout: e.target.value })} />
@@ -417,11 +418,11 @@ export default function SalesPage() {
                     <span>{s.outlet}</span>
                     {(() => {
                       const key = String(s.outlet || "").toLowerCase();
-                      if (key === "tokopedia" || key === "shopee") {
+                      if (key === "tokopedia" || key === "shopee" || key === "wholesale" || key === "complain") {
                         const filled = typeof s.actPayout === "number" && !Number.isNaN(s.actPayout);
                         return (
                           <Badge color={filled ? "green" : "red"}>
-                            {filled ? "Actual" : "Actual"}
+                            {filled ? "Paid" : "Not Paid"}
                           </Badge>
                         );
                       }
@@ -478,6 +479,7 @@ export default function SalesPage() {
                   <option>WhatsApp</option>
                   <option>Cafe</option>
                   <option>Wholesale</option>
+                  <option>Complain</option>
                   <option>Free</option>
                 </select>
               </div>
@@ -488,7 +490,7 @@ export default function SalesPage() {
                   <option>Jakarta</option>
                 </select>
               </div>
-              {(editModal.sale.outlet === "Tokopedia" || editModal.sale.outlet === "Shopee" || editModal.sale.outlet === "WhatsApp" || editModal.sale.outlet === "Free" || editModal.sale.outlet === "Wholesale" || editModal.sale.outlet === "Cafe") && (
+              {(editModal.sale.outlet === "Tokopedia" || editModal.sale.outlet === "Shopee" || editModal.sale.outlet === "WhatsApp" || editModal.sale.outlet === "Free" || editModal.sale.outlet === "Wholesale" || editModal.sale.outlet === "Complain" || editModal.sale.outlet === "Cafe") && (
                 <div className="flex flex-col gap-1">
                   <Label>{(editModal.sale.outlet === "Tokopedia" || editModal.sale.outlet === "Shopee") ? "ID Pesanan *" : "Customer *"}</Label>
                   <Input placeholder={(editModal.sale.outlet === "Tokopedia" || editModal.sale.outlet === "Shopee") ? "Masukkan ID Pesanan" : "Customer"} value={editModal.sale.customer || ""} onChange={(e) => setEditModal((prev) => prev.sale ? { ...prev, sale: { ...prev.sale, customer: e.target.value } } : prev)} />
@@ -545,19 +547,19 @@ export default function SalesPage() {
                   placeholder="Select ship date"
                 />
               </div>
-              {(editModal.sale.outlet === "Tokopedia" || editModal.sale.outlet === "Shopee" || editModal.sale.outlet === "Wholesale") && (
+              {(editModal.sale.outlet === "Tokopedia" || editModal.sale.outlet === "Shopee" || editModal.sale.outlet === "Wholesale" || editModal.sale.outlet === "Complain") && (
                 <div className="flex flex-col gap-1">
                   <Label>Est Payout</Label>
                   <Input type="number" value={editModal.sale.estPayout ?? ""} onChange={(e) => setEditModal((prev) => prev.sale ? { ...prev, sale: { ...prev.sale, estPayout: e.target.value === "" ? null : Number(e.target.value) } } : prev)} />
                 </div>
               )}
-              {(editModal.sale.outlet === "Tokopedia" || editModal.sale.outlet === "Shopee" || editModal.sale.outlet === "Wholesale") && (
+              {(editModal.sale.outlet === "Tokopedia" || editModal.sale.outlet === "Shopee" || editModal.sale.outlet === "Wholesale" || editModal.sale.outlet === "Complain") && (
                 <div className="flex flex-col gap-1">
                   <Label>Actual Payout</Label>
                   <Input type="number" value={editModal.sale.actPayout ?? ""} onChange={(e) => setEditModal((prev) => prev.sale ? { ...prev, sale: { ...prev.sale, actPayout: e.target.value === "" ? null : Number(e.target.value) } } : prev)} />
                 </div>
               )}
-              {(editModal.sale.outlet === "WhatsApp" || editModal.sale.outlet === "Cafe" || editModal.sale.outlet === "Wholesale") && (
+              {(editModal.sale.outlet === "WhatsApp" || editModal.sale.outlet === "Cafe" || editModal.sale.outlet === "Wholesale" || editModal.sale.outlet === "Complain") && (
                 <div className="flex flex-col gap-1">
                   <Label>Discount %</Label>
                   <Input type="number" placeholder="Discount %" value={editModal.sale.discount ?? ""} onChange={(e) => setEditModal((prev) => prev.sale ? { ...prev, sale: { ...prev.sale, discount: e.target.value === "" ? null : Number(e.target.value) } } : prev)} />
@@ -598,9 +600,9 @@ export default function SalesPage() {
                   const outletKey = String(editModal.sale.outlet || "").toLowerCase();
                   const discountPct = typeof editModal.sale.discount === "number" ? editModal.sale.discount : null;
                   let displayPrice = it.price;
-                  if ((outletKey === "whatsapp" || outletKey === "cafe" || outletKey === "wholesale") && typeof discountPct === "number") {
+                  if ((outletKey === "whatsapp" || outletKey === "cafe" || outletKey === "wholesale" || outletKey === "complain") && typeof discountPct === "number") {
                     displayPrice = Math.round(it.price * (1 - discountPct / 100));
-                  } else if ((outletKey === "tokopedia" || outletKey === "shopee") && typeof editModal.sale.estPayout === "number" && typeof editModal.sale.actPayout === "number" && editModal.sale.estPayout > 0) {
+                  } else if ((outletKey === "tokopedia" || outletKey === "shopee" || outletKey === "wholesale" || outletKey === "complain") && typeof editModal.sale.estPayout === "number" && typeof editModal.sale.actPayout === "number" && editModal.sale.estPayout > 0) {
                     const ratio = Math.max(0, Math.min(1, editModal.sale.actPayout / editModal.sale.estPayout));
                     displayPrice = Math.round(it.price * ratio);
                   }
