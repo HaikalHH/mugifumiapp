@@ -42,6 +42,22 @@ type Order = {
       };
     }>;
   }>;
+  _deliveryData?: {
+    id: number;
+    status: string;
+    deliveryDate: string | null;
+    items: Array<{
+      id: number;
+      productId: number;
+      barcode: string;
+      price: number;
+      product: {
+        id: number;
+        code: string;
+        name: string;
+      };
+    }>;
+  };
 };
 
 type Delivery = {
@@ -154,15 +170,21 @@ export default function DeliveryPage() {
     setSelectedOrder(order);
     
     // If this is a delivered order, load the delivery data
-    if (order && order.deliveries && order.deliveries.length > 0) {
-      const delivery = order.deliveries[0]; // Get the first delivery
-      
+    // Check both order.deliveries (from pending orders) and order._deliveryData (from history)
+    let deliveryData = null;
+    if (order && order._deliveryData) {
+      deliveryData = order._deliveryData;
+    } else if (order && order.deliveries && order.deliveries.length > 0) {
+      deliveryData = order.deliveries[0];
+    }
+    
+    if (deliveryData) {
       setForm({
-        deliveryDate: delivery.deliveryDate ? new Date(delivery.deliveryDate) : new Date(),
+        deliveryDate: deliveryData.deliveryDate ? new Date(deliveryData.deliveryDate) : new Date(),
       });
       
-      if (delivery.items && delivery.items.length > 0) {
-        const deliveryItems = delivery.items.map(item => ({
+      if (deliveryData.items && deliveryData.items.length > 0) {
+        const deliveryItems = deliveryData.items.map(item => ({
           productId: item.productId,
           barcode: item.barcode,
           product: item.product
@@ -488,7 +510,19 @@ export default function DeliveryPage() {
                     <Button 
                       variant="link" 
                       className="p-0 h-auto" 
-                      onClick={() => openModal(delivery.order)}
+                      onClick={() => {
+                        // Pass order with delivery data attached
+                        const orderWithDelivery = {
+                          ...delivery.order,
+                          _deliveryData: {
+                            id: delivery.id,
+                            status: delivery.status,
+                            deliveryDate: delivery.deliveryDate,
+                            items: delivery.items
+                          }
+                        };
+                        openModal(orderWithDelivery);
+                      }}
                     >
                       {delivery.status === "pending" ? "Process" : "View"}
                     </Button>
@@ -581,10 +615,10 @@ export default function DeliveryPage() {
 
                 <div>
                   <h3 className="font-medium mb-2">
-                    {selectedOrder && selectedOrder.deliveries && selectedOrder.deliveries.length > 0 ? "Scanned Items" : "Scan Items"}
+                    {selectedOrder && (selectedOrder._deliveryData || (selectedOrder.deliveries && selectedOrder.deliveries.length > 0)) ? "Scanned Items" : "Scan Items"}
                   </h3>
                   <div className="space-y-2">
-                    {(!selectedOrder || !selectedOrder.deliveries || selectedOrder.deliveries.length === 0) && (
+                    {(!selectedOrder || (!selectedOrder._deliveryData && (!selectedOrder.deliveries || selectedOrder.deliveries.length === 0))) && (
                       <div className="flex gap-2">
                         <Input 
                           placeholder="Scan barcode" 
@@ -609,7 +643,7 @@ export default function DeliveryPage() {
                             <TableCell>{item.barcode}</TableCell>
                             <TableCell>{item.product.name}</TableCell>
                             <TableCell className="text-center">
-                              {(!selectedOrder || !selectedOrder.deliveries || selectedOrder.deliveries.length === 0) && (
+                              {(!selectedOrder || (!selectedOrder._deliveryData && (!selectedOrder.deliveries || selectedOrder.deliveries.length === 0))) && (
                                 <Button variant="link" className="text-red-600 p-0 h-auto" onClick={() => removeScan(idx)}>Remove</Button>
                               )}
                             </TableCell>
@@ -629,7 +663,7 @@ export default function DeliveryPage() {
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsModalOpen(false)} type="button" disabled={isSubmitting}>Close</Button>
-                              {(!selectedOrder || !selectedOrder.deliveries || selectedOrder.deliveries.length === 0) && (
+            {(!selectedOrder || (!selectedOrder._deliveryData && (!selectedOrder.deliveries || selectedOrder.deliveries.length === 0))) && (
               <Button className="disabled:opacity-50" onClick={submitDelivery} type="button" disabled={isSubmitting}>{isSubmitting ? "Submitting..." : "Submit Delivery"}</Button>
             )}
           </DialogFooter>
