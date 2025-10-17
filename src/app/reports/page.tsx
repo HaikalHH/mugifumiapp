@@ -18,6 +18,8 @@ export default function ReportsPage() {
   const [to, setTo] = useState<Date | undefined>(undefined);
   const [menuLocation, setMenuLocation] = useState("all");
   const [menuOutlet, setMenuOutlet] = useState("all");
+  const [sendingWhatsApp, setSendingWhatsApp] = useState(false);
+  const [whatsappMessage, setWhatsappMessage] = useState<string | null>(null);
 
   const load = async () => {
     const qs: string[] = [];
@@ -58,6 +60,38 @@ export default function ReportsPage() {
     setMenuItems(data);
   };
 
+  const sendWhatsAppReport = async () => {
+    try {
+      setSendingWhatsApp(true);
+      setWhatsappMessage(null);
+      
+      const response = await fetch("/api/whatsapp/send-report", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          date: new Date().toISOString(),
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setWhatsappMessage("✅ Report berhasil dikirim ke WhatsApp!");
+        setTimeout(() => setWhatsappMessage(null), 5000);
+      } else {
+        setWhatsappMessage("❌ Gagal mengirim report: " + (data.error || "Unknown error"));
+        setTimeout(() => setWhatsappMessage(null), 5000);
+      }
+    } catch (error) {
+      setWhatsappMessage("❌ Error mengirim report ke WhatsApp");
+      setTimeout(() => setWhatsappMessage(null), 5000);
+    } finally {
+      setSendingWhatsApp(false);
+    }
+  };
+
   useEffect(() => { 
     if (username === "Admin" || username === "Manager") {
       load(); 
@@ -80,7 +114,25 @@ export default function ReportsPage() {
 
   return (
     <main className="p-6 space-y-6">
-      <h1 className="text-xl font-semibold">Reports</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-semibold">Reports</h1>
+        <div className="flex items-center gap-3">
+          {whatsappMessage && (
+            <div className="text-sm px-3 py-1 rounded bg-blue-50 text-blue-700">
+              {whatsappMessage}
+            </div>
+          )}
+          <Button
+            onClick={sendWhatsAppReport}
+            disabled={sendingWhatsApp}
+            variant="outline"
+            className="flex items-center gap-2"
+          >
+            <span>📱</span>
+            {sendingWhatsApp ? "Mengirim..." : "Kirim Report ke WhatsApp"}
+          </Button>
+        </div>
+      </div>
 
       <section>
         <h2 className="font-medium mb-2">Inventory</h2>

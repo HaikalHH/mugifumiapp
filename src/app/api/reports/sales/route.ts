@@ -76,16 +76,18 @@ export async function GET(req: NextRequest) {
 
       // For orders, actual received is actPayout if available, otherwise totalAmount
       // For Free outlet, set to 0
-      const actual = isFree ? 0 : (order.actPayout || order.totalAmount || null);
+      // For Cafe outlet, if no actPayout, set to 0
+      const actual = isFree ? 0 : (isCafe ? (order.actPayout ?? 0) : (order.actPayout || order.totalAmount || null));
 
       // Potongan calculation for orders:
       // - Free: 100% (all is potongan since actual is 0)
-      // - Cafe: original (pre-discount) minus actual (discounted)
+      // - Cafe: original (pre-discount) minus actual
+      //   If actPayout is set, use it; otherwise actual is 0, so potongan = preDiscountSubtotal
       // - Others: difference between pre-discount and actual
       const potongan = isFree
         ? preDiscountSubtotal
         : (isCafe
-          ? (preDiscountSubtotal - discountedSubtotal)
+          ? (preDiscountSubtotal - (actual ?? 0))
           : (actual != null ? (preDiscountSubtotal - actual) : null));
 
       const potonganPct = isFree
