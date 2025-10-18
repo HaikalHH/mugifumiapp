@@ -308,31 +308,44 @@ export default function OrdersPage() {
       // Send WhatsApp notification only on create (not on edit)
       if (!editingOrderId) {
         try {
-          const dest = (editingOrderId ? editingLocation : location) === "Jakarta" ? "628986723926" : "6281320699662";
           const orderOutlet = editingOrderId ? editingOutlet : outlet;
           const orderLocation = editingOrderId ? editingLocation : location;
           const orderCustomer = form.customer || "-";
           const orderTotal = calculateTotal();
-          const lines = selectedItems.map((it) => {
+          const orderItems = selectedItems.map((it) => {
             const name = it.product?.name || `#${it.productId}`;
             const price = it.product?.price || 0;
             const subtotal = price * it.quantity;
-            return `- ${name} x${it.quantity} @ Rp ${price.toLocaleString("id-ID")} = Rp ${subtotal.toLocaleString("id-ID")}`;
+            return {
+              name,
+              quantity: it.quantity,
+              price,
+              subtotal
+            };
           });
-          const msg = [
-            "Notifikasi Order Baru",
-            `Outlet: ${orderOutlet}`,
-            `Region: ${orderLocation}`,
-            `Customer: ${orderCustomer}`,
-            "Items:",
-            ...lines,
-            `Total: Rp ${orderTotal.toLocaleString("id-ID")}`,
-          ].join("\n");
-          const url = `https://wa.me/${dest}?text=${encodeURIComponent(msg)}`;
-          if (typeof window !== "undefined") {
-            window.open(url, "_blank");
+
+          // Send notification via Ultramsg API
+          const notificationResponse = await fetch("/api/whatsapp/send-order-notification", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              outlet: orderOutlet,
+              location: orderLocation,
+              customer: orderCustomer,
+              total: orderTotal,
+              items: orderItems
+            })
+          });
+
+          if (notificationResponse.ok) {
+            const notificationData = await notificationResponse.json();
+            console.log("Order notification sent:", notificationData.message);
+          } else {
+            console.error("Failed to send order notification");
           }
-        } catch {}
+        } catch (error) {
+          console.error("Error sending order notification:", error);
+        }
       }
       setIsModalOpen(false);
       loadOrders();
