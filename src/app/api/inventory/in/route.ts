@@ -31,6 +31,51 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Product not found for barcode" }, { status: 404 });
     }
 
+    // Check if barcode already exists in inventory
+    const existingItem = await withRetry(async () => {
+      return prisma.inventory.findUnique({
+        where: { barcode: parsed.raw },
+        select: {
+          id: true,
+          barcode: true,
+          location: true,
+          status: true,
+          productId: true
+        }
+      });
+    }, 2, 'inventory-in-check-existing');
+
+    if (existingItem) {
+      // If barcode exists but in different location, auto-move it
+      if (existingItem.location !== location) {
+        const updated = await withRetry(async () => {
+          return prisma.inventory.update({
+            where: { barcode: parsed.raw },
+            data: { location: location },
+            select: {
+              id: true,
+              barcode: true,
+              location: true,
+              status: true,
+              productId: true,
+              createdAt: true
+            }
+          });
+        }, 2, 'inventory-in-auto-move');
+
+        logRouteComplete('inventory-in', 1);
+        return NextResponse.json({
+          ...updated,
+          action: 'moved',
+          message: `Item ${parsed.raw} berhasil dipindahkan dari ${existingItem.location} ke ${location}`
+        }, { status: 200 });
+      } else {
+        // Barcode exists in same location
+        return NextResponse.json({ error: "Barcode already exists in this location" }, { status: 409 });
+      }
+    }
+
+    // Create new inventory item if barcode doesn't exist
     const created = await withRetry(async () => {
       return prisma.inventory.create({
         data: {
