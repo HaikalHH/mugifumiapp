@@ -65,7 +65,7 @@ async function sendWhatsAppToMultipleNumbers(message: string): Promise<{ total: 
   };
 }
 
-async function getOutletRegionReport(date?: Date): Promise<{ byOutletRegion: Record<string, OutletRegionData>; totalActual: number; orderCount: number }> {
+async function getOutletRegionReport(date?: Date): Promise<{ byOutletRegion: Record<string, OutletRegionData>; totalActual: number; totalOngkirPotongan: number; orderCount: number }> {
   // If no date provided, use today
   const targetDate = date || new Date();
   
@@ -116,7 +116,7 @@ async function getOutletRegionReport(date?: Date): Promise<{ byOutletRegion: Rec
   }, 2, 'whatsapp-report-orders');
 
   if (orders.length === 0) {
-    return { byOutletRegion: {}, totalActual: 0, orderCount: 0 };
+    return { byOutletRegion: {}, totalActual: 0, totalOngkirPotongan: 0, orderCount: 0 };
   }
 
   const needsDiscount = (ot: string) => {
