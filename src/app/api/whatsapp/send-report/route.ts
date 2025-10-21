@@ -133,9 +133,9 @@ async function getOutletRegionReport(date?: Date): Promise<{ byOutletRegion: Rec
     const preDiscountSubtotal = orderItems.reduce((acc: number, item: any) => acc + (item.price * item.quantity), 0);
     const discountPct = needsDiscount(order.outlet) && typeof order.discount === "number" ? order.discount : 0;
 
-    // Calculate ongkir potongan from deliveries
+    // Calculate ongkir potongan from deliveries (only for WhatsApp outlet)
     let ongkirPotongan = 0;
-    if (order.deliveries && order.deliveries.length > 0) {
+    if (order.outlet.toLowerCase() === "whatsapp" && order.deliveries && order.deliveries.length > 0) {
       for (const delivery of order.deliveries) {
         if (delivery.ongkirPlan && delivery.ongkirActual && delivery.status === "delivered") {
           const ongkirDifference = delivery.ongkirActual - delivery.ongkirPlan;

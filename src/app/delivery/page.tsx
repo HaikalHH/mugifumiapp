@@ -329,40 +329,48 @@ export default function DeliveryPage() {
       return;
     }
 
-    // Validate Ongkir fields
-    if (!form.ongkirPlan || form.ongkirPlan === "") {
-      setError("Ongkir (Plan) harus diisi");
-      return;
-    }
+    // Validate Ongkir fields (only for WhatsApp outlet)
+    if (selectedOrder?.outlet?.toLowerCase() === "whatsapp") {
+      if (!form.ongkirPlan || form.ongkirPlan === "") {
+        setError("Ongkir (Plan) harus diisi");
+        return;
+      }
 
-    if (!form.ongkirActual || form.ongkirActual === "") {
-      setError("Ongkir (Actual) harus diisi");
-      return;
-    }
+      if (!form.ongkirActual || form.ongkirActual === "") {
+        setError("Ongkir (Actual) harus diisi");
+        return;
+      }
 
-    const ongkirPlanNum = parseInt(form.ongkirPlan.replace(/[^\d]/g, ""));
-    const ongkirActualNum = parseInt(form.ongkirActual.replace(/[^\d]/g, ""));
+      const ongkirPlanNum = parseInt(form.ongkirPlan.replace(/[^\d]/g, ""));
+      const ongkirActualNum = parseInt(form.ongkirActual.replace(/[^\d]/g, ""));
 
-    if (isNaN(ongkirPlanNum) || ongkirPlanNum <= 0) {
-      setError("Ongkir (Plan) harus berupa angka yang valid");
-      return;
-    }
+      if (isNaN(ongkirPlanNum) || ongkirPlanNum <= 0) {
+        setError("Ongkir (Plan) harus berupa angka yang valid");
+        return;
+      }
 
-    if (isNaN(ongkirActualNum) || ongkirActualNum <= 0) {
-      setError("Ongkir (Actual) harus berupa angka yang valid");
-      return;
+      if (isNaN(ongkirActualNum) || ongkirActualNum <= 0) {
+        setError("Ongkir (Actual) harus berupa angka yang valid");
+        return;
+      }
     }
 
     const payload: any = {
       orderId: selectedOrder?.id,
       deliveryDate: form.deliveryDate.toISOString(),
-      ongkirPlan: ongkirPlanNum,
-      ongkirActual: ongkirActualNum,
       items: scannedItems.map(item => ({
         productId: item.productId,
         barcode: item.barcode
       })),
     };
+
+    // Only include ongkir fields for WhatsApp outlet
+    if (selectedOrder?.outlet?.toLowerCase() === "whatsapp") {
+      const ongkirPlanNum = parseInt(form.ongkirPlan.replace(/[^\d]/g, ""));
+      const ongkirActualNum = parseInt(form.ongkirActual.replace(/[^\d]/g, ""));
+      payload.ongkirPlan = ongkirPlanNum;
+      payload.ongkirActual = ongkirActualNum;
+    }
 
     setIsSubmitting(true);
     const res = await fetch("/api/deliveries", { 
@@ -611,39 +619,42 @@ export default function DeliveryPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <h3 className="font-medium mb-2">Ongkir (Plan)</h3>
-                  <Input
-                    type="text"
-                    placeholder="Rp 0"
-                    value={form.ongkirPlan}
-                    onChange={(e) => {
-                      const value = e.target.value.replace(/[^\d]/g, "");
-                      const formatted = value ? `Rp ${parseInt(value).toLocaleString("id-ID")}` : "";
-                      setForm({ ...form, ongkirPlan: formatted });
-                    }}
-                    className="w-full"
-                  />
+              {/* Ongkir fields only for WhatsApp outlet */}
+              {selectedOrder?.outlet?.toLowerCase() === "whatsapp" && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <h3 className="font-medium mb-2">Ongkir (Plan)</h3>
+                    <Input
+                      type="text"
+                      placeholder="Rp 0"
+                      value={form.ongkirPlan}
+                      onChange={(e) => {
+                        const value = e.target.value.replace(/[^\d]/g, "");
+                        const formatted = value ? `Rp ${parseInt(value).toLocaleString("id-ID")}` : "";
+                        setForm({ ...form, ongkirPlan: formatted });
+                      }}
+                      className="w-full"
+                    />
+                  </div>
+                  <div>
+                    <h3 className="font-medium mb-2">Ongkir (Actual)</h3>
+                    <Input
+                      type="text"
+                      placeholder="Rp 0"
+                      value={form.ongkirActual}
+                      onChange={(e) => {
+                        const value = e.target.value.replace(/[^\d]/g, "");
+                        const formatted = value ? `Rp ${parseInt(value).toLocaleString("id-ID")}` : "";
+                        setForm({ ...form, ongkirActual: formatted });
+                      }}
+                      className="w-full"
+                    />
+                  </div>
                 </div>
-                <div>
-                  <h3 className="font-medium mb-2">Ongkir (Actual)</h3>
-                  <Input
-                    type="text"
-                    placeholder="Rp 0"
-                    value={form.ongkirActual}
-                    onChange={(e) => {
-                      const value = e.target.value.replace(/[^\d]/g, "");
-                      const formatted = value ? `Rp ${parseInt(value).toLocaleString("id-ID")}` : "";
-                      setForm({ ...form, ongkirActual: formatted });
-                    }}
-                    className="w-full"
-                  />
-                </div>
-              </div>
+              )}
 
-              {/* Cost Difference Display */}
-              {form.ongkirPlan && form.ongkirActual && (
+              {/* Cost Difference Display - only for WhatsApp outlet */}
+              {selectedOrder?.outlet?.toLowerCase() === "whatsapp" && form.ongkirPlan && form.ongkirActual && (
                 <div className="bg-gray-50 p-4 rounded-lg">
                   <h3 className="font-medium mb-2">Cost Analysis</h3>
                   {(() => {

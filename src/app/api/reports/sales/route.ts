@@ -79,9 +79,9 @@ export async function GET(req: NextRequest) {
       const discountPct = needsDiscount(order.outlet) && typeof order.discount === "number" ? order.discount : 0;
       const discountedSubtotal = Math.round(preDiscountSubtotal * (1 - (discountPct || 0) / 100));
 
-      // Calculate ongkir potongan from deliveries
+      // Calculate ongkir potongan from deliveries (only for WhatsApp outlet)
       let ongkirPotongan = 0;
-      if (order.deliveries && order.deliveries.length > 0) {
+      if (order.outlet.toLowerCase() === "whatsapp" && order.deliveries && order.deliveries.length > 0) {
         for (const delivery of order.deliveries) {
           if (delivery.ongkirPlan && delivery.ongkirActual && delivery.status === "delivered") {
             const ongkirDifference = delivery.ongkirActual - delivery.ongkirPlan;
