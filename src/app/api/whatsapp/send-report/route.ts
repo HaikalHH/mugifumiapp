@@ -15,6 +15,7 @@ interface OutletRegionData {
   count: number;
   actual: number;
   potonganPct: number | null;
+  ongkirPotongan: number;
 }
 
 async function sendWhatsAppMessage(message: string, phoneNumber: string): Promise<boolean> {
@@ -100,6 +101,14 @@ async function getOutletRegionReport(date?: Date): Promise<{ byOutletRegion: Rec
             quantity: true,
             price: true
           }
+        },
+        deliveries: {
+          select: {
+            id: true,
+            ongkirPlan: true,
+            ongkirActual: true,
+            status: true
+          }
         }
       },
       orderBy: { id: 'desc' }
@@ -124,17 +133,30 @@ async function getOutletRegionReport(date?: Date): Promise<{ byOutletRegion: Rec
     const preDiscountSubtotal = orderItems.reduce((acc: number, item: any) => acc + (item.price * item.quantity), 0);
     const discountPct = needsDiscount(order.outlet) && typeof order.discount === "number" ? order.discount : 0;
 
+    // Calculate ongkir potongan from deliveries
+    let ongkirPotongan = 0;
+    if (order.deliveries && order.deliveries.length > 0) {
+      for (const delivery of order.deliveries) {
+        if (delivery.ongkirPlan && delivery.ongkirActual && delivery.status === "delivered") {
+          const ongkirDifference = delivery.ongkirActual - delivery.ongkirPlan;
+          if (ongkirDifference > 0) {
+            ongkirPotongan += ongkirDifference;
+          }
+        }
+      }
+    }
+
     // For orders, actual received is actPayout if available, otherwise totalAmount
     // For Free outlet, set to 0
     // For Cafe outlet, if no actPayout, set to 0
     const actual = isFree ? 0 : (isCafe ? (order.actPayout ?? 0) : (order.actPayout || order.totalAmount || null));
 
-    // Potongan calculation for orders
+    // Potongan calculation for orders (include ongkir potongan)
     const potongan = isFree
-      ? preDiscountSubtotal
+      ? preDiscountSubtotal + ongkirPotongan
       : (isCafe
-        ? (preDiscountSubtotal - (actual ?? 0))
-        : (actual != null ? (preDiscountSubtotal - actual) : null));
+        ? (preDiscountSubtotal - (actual ?? 0) + ongkirPotongan)
+        : (actual != null ? (preDiscountSubtotal - actual + ongkirPotongan) : null));
 
     const potonganPct = isFree
       ? 100
@@ -151,24 +173,28 @@ async function getOutletRegionReport(date?: Date): Promise<{ byOutletRegion: Rec
       potongan,
       potonganPct,
       originalBeforeDiscount: preDiscountSubtotal,
+      ongkirPotongan,
     };
   });
 
-  const byOutletRegionAgg: Record<string, { count: number; actual: number; original: number; potongan: number }> = {};
+  const byOutletRegionAgg: Record<string, { count: number; actual: number; original: number; potongan: number; ongkirPotongan: number }> = {};
   let totalActual = 0;
   let totalOriginal = 0;
   let totalPotongan = 0;
+  let totalOngkirPotongan = 0;
   
   for (const row of perSale) {
     const regionKey = `${row.outlet} ${row.location}`.trim();
-    byOutletRegionAgg[regionKey] ||= { count: 0, actual: 0, original: 0, potongan: 0 };
+    byOutletRegionAgg[regionKey] ||= { count: 0, actual: 0, original: 0, potongan: 0, ongkirPotongan: 0 };
     byOutletRegionAgg[regionKey].count += 1;
     byOutletRegionAgg[regionKey].actual += row.actualReceived || 0;
     byOutletRegionAgg[regionKey].original += row.originalBeforeDiscount || 0;
     byOutletRegionAgg[regionKey].potongan += row.potongan || 0;
+    byOutletRegionAgg[regionKey].ongkirPotongan += row.ongkirPotongan || 0;
     totalActual += row.actualReceived || 0;
     totalOriginal += row.originalBeforeDiscount || 0;
     totalPotongan += row.potongan || 0;
+    totalOngkirPotongan += row.ongkirPotongan || 0;
   }
 
   const byOutletRegion: Record<string, OutletRegionData> = Object.fromEntries(
@@ -178,6 +204,7 @@ async function getOutletRegionReport(date?: Date): Promise<{ byOutletRegion: Rec
         count: v.count,
         actual: v.actual,
         potonganPct: v.original > 0 ? Math.round(((v.potongan / v.original) * 100) * 10) / 10 : null,
+        ongkirPotongan: v.ongkirPotongan,
       },
     ])
   );
@@ -185,11 +212,12 @@ async function getOutletRegionReport(date?: Date): Promise<{ byOutletRegion: Rec
   return {
     byOutletRegion,
     totalActual,
+    totalOngkirPotongan,
     orderCount: orders.length,
   };
 }
 
-function formatReportMessage(data: { byOutletRegion: Record<string, OutletRegionData>; totalActual: number; orderCount: number }, date: Date): string {
+function formatReportMessage(data: { byOutletRegion: Record<string, OutletRegionData>; totalActual: number; totalOngkirPotongan: number; orderCount: number }, date: Date): string {
   const dateStr = date.toLocaleDateString("id-ID", { 
     weekday: 'long', 
     year: 'numeric', 
@@ -213,13 +241,20 @@ function formatReportMessage(data: { byOutletRegion: Record<string, OutletRegion
       message += `📍 *${key}*\n`;
       message += `   • Transaksi: ${value.count}\n`;
       message += `   • Actual: Rp ${value.actual.toLocaleString("id-ID")}\n`;
-      message += `   • Potongan: ${value.potonganPct != null ? `${value.potonganPct}%` : "-"}\n\n`;
+      message += `   • Potongan: ${value.potonganPct != null ? `${value.potonganPct}%` : "-"}\n`;
+      if (value.ongkirPotongan > 0) {
+        message += `   • Ongkir Potongan: Rp ${value.ongkirPotongan.toLocaleString("id-ID")}\n`;
+      }
+      message += `\n`;
     }
 
     message += `━━━━━━━━━━━━━━━━━━━━\n`;
     message += `*TOTAL*\n`;
     message += `📦 Total Transaksi: ${data.orderCount}\n`;
     message += `💰 Total Actual: Rp ${data.totalActual.toLocaleString("id-ID")}\n`;
+    if (data.totalOngkirPotongan > 0) {
+      message += `🚚 Total Ongkir Potongan: Rp ${data.totalOngkirPotongan.toLocaleString("id-ID")}\n`;
+    }
   }
 
   message += `\n_Laporan otomatis dari Mugifumi App_`;

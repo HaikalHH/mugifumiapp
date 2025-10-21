@@ -28,6 +28,23 @@ export interface OrderNotificationData {
   }>;
 }
 
+export interface DeliveryNotificationData {
+  outlet: string;
+  location: string;
+  customer: string;
+  orderId: number;
+  deliveryDate: string;
+  ongkirPlan: number;
+  ongkirActual: number;
+  costDifference: number;
+  costDifferencePercent: number;
+  items: Array<{
+    name: string;
+    barcode: string;
+    price: number;
+  }>;
+}
+
 export async function sendWhatsAppMessage(message: string, phoneNumber: string): Promise<boolean> {
   try {
     const response = await fetch(`${ULTRAMSG_BASE_URL}/messages/chat`, {
@@ -110,6 +127,47 @@ export function formatOrderNotificationMessage(data: OrderNotificationData): str
   return message;
 }
 
+export function formatDeliveryNotificationMessage(data: DeliveryNotificationData): string {
+  const lines = data.items.map((item) => {
+    return `- ${item.name} (${item.barcode}) @ Rp ${item.price.toLocaleString("id-ID")}`;
+  });
+
+  const costDifferenceText = data.costDifference > 0 
+    ? `📈 Lebih mahal Rp ${Math.abs(data.costDifference).toLocaleString("id-ID")} (${data.costDifferencePercent.toFixed(1)}%)`
+    : data.costDifference < 0 
+    ? `📉 Lebih murah Rp ${Math.abs(data.costDifference).toLocaleString("id-ID")} (${Math.abs(data.costDifferencePercent).toFixed(1)}%)`
+    : `✅ Sesuai rencana`;
+
+  const message = [
+    "🚚 *Notifikasi Delivery Selesai*",
+    "",
+    `🏪 *Outlet:* ${data.outlet}`,
+    `📍 *Region:* ${data.location}`,
+    `👤 *Customer:* ${data.customer}`,
+    `📦 *Order ID:* #${data.orderId}`,
+    `📅 *Delivery Date:* ${new Date(data.deliveryDate).toLocaleDateString("id-ID")}`,
+    "",
+    "💰 *Ongkir Details:*",
+    `📋 *Plan:* Rp ${data.ongkirPlan.toLocaleString("id-ID")}`,
+    `✅ *Actual:* Rp ${data.ongkirActual.toLocaleString("id-ID")}`,
+    `📊 *Selisih:* ${costDifferenceText}`,
+    "",
+    "📦 *Items Delivered:*",
+    ...lines,
+    "",
+    "⏰ " + new Date().toLocaleString("id-ID", { 
+      timeZone: "Asia/Jakarta",
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
+  ].join("\n");
+
+  return message;
+}
+
 export async function sendOrderNotification(data: OrderNotificationData): Promise<{ 
   success: boolean; 
   message: string; 
@@ -148,6 +206,48 @@ export async function sendOrderNotification(data: OrderNotificationData): Promis
     return {
       success: false,
       message: "Error sending order notification"
+    };
+  }
+}
+
+export async function sendDeliveryNotification(data: DeliveryNotificationData): Promise<{ 
+  success: boolean; 
+  message: string; 
+  results?: Array<{ phone: string; success: boolean }> 
+}> {
+  try {
+    const message = formatDeliveryNotificationMessage(data);
+    
+    // Get phone number based on location
+    const phoneNumber = ORDER_PHONE_NUMBERS[data.location as keyof typeof ORDER_PHONE_NUMBERS];
+    
+    if (!phoneNumber) {
+      return {
+        success: false,
+        message: `No phone number configured for location: ${data.location}`
+      };
+    }
+
+    // Send to specific region phone number
+    const success = await sendWhatsAppMessage(message, phoneNumber);
+
+    if (!success) {
+      return {
+        success: false,
+        message: `Failed to send WhatsApp notification to ${phoneNumber}`
+      };
+    }
+
+    return {
+      success: true,
+      message: `Delivery notification sent successfully to ${phoneNumber} (${data.location})`,
+      results: [{ phone: phoneNumber, success: true }]
+    };
+  } catch (error) {
+    console.error("Error sending delivery notification:", error);
+    return {
+      success: false,
+      message: "Error sending delivery notification"
     };
   }
 }

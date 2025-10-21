@@ -46,6 +46,14 @@ export async function GET(req: NextRequest) {
               quantity: true,
               price: true
             }
+          },
+          deliveries: {
+            select: {
+              id: true,
+              ongkirPlan: true,
+              ongkirActual: true,
+              status: true
+            }
           }
         },
         orderBy: { id: 'desc' }
@@ -71,6 +79,19 @@ export async function GET(req: NextRequest) {
       const discountPct = needsDiscount(order.outlet) && typeof order.discount === "number" ? order.discount : 0;
       const discountedSubtotal = Math.round(preDiscountSubtotal * (1 - (discountPct || 0) / 100));
 
+      // Calculate ongkir potongan from deliveries
+      let ongkirPotongan = 0;
+      if (order.deliveries && order.deliveries.length > 0) {
+        for (const delivery of order.deliveries) {
+          if (delivery.ongkirPlan && delivery.ongkirActual && delivery.status === "delivered") {
+            const ongkirDifference = delivery.ongkirActual - delivery.ongkirPlan;
+            if (ongkirDifference > 0) {
+              ongkirPotongan += ongkirDifference;
+            }
+          }
+        }
+      }
+
       // For orders, use totalAmount as the expected total
       const expectedTotal = order.totalAmount || discountedSubtotal;
 
@@ -79,16 +100,16 @@ export async function GET(req: NextRequest) {
       // For Cafe outlet, if no actPayout, set to 0
       const actual = isFree ? 0 : (isCafe ? (order.actPayout ?? 0) : (order.actPayout || order.totalAmount || null));
 
-      // Potongan calculation for orders:
+      // Potongan calculation for orders (include ongkir potongan):
       // - Free: 100% (all is potongan since actual is 0)
       // - Cafe: original (pre-discount) minus actual
       //   If actPayout is set, use it; otherwise actual is 0, so potongan = preDiscountSubtotal
       // - Others: difference between pre-discount and actual
       const potongan = isFree
-        ? preDiscountSubtotal
+        ? preDiscountSubtotal + ongkirPotongan
         : (isCafe
-          ? (preDiscountSubtotal - (actual ?? 0))
-          : (actual != null ? (preDiscountSubtotal - actual) : null));
+          ? (preDiscountSubtotal - (actual ?? 0) + ongkirPotongan)
+          : (actual != null ? (preDiscountSubtotal - actual + ongkirPotongan) : null));
 
       const potonganPct = isFree
         ? 100
@@ -109,31 +130,36 @@ export async function GET(req: NextRequest) {
         potongan,
         potonganPct,
         originalBeforeDiscount: preDiscountSubtotal,
+        ongkirPotongan,
         itemsCount: orderItems.length,
       };
     });
 
-    const byOutlet: Record<string, { count: number; actual: number; original: number; potongan: number }> = {};
-    const byOutletRegionAgg: Record<string, { count: number; actual: number; original: number; potongan: number }> = {};
+    const byOutlet: Record<string, { count: number; actual: number; original: number; potongan: number; ongkirPotongan: number }> = {};
+    const byOutletRegionAgg: Record<string, { count: number; actual: number; original: number; potongan: number; ongkirPotongan: number }> = {};
     let totalActual = 0;
     let totalOriginal = 0;
     let totalPotongan = 0;
+    let totalOngkirPotongan = 0;
     for (const row of perSale) {
-      byOutlet[row.outlet] ||= { count: 0, actual: 0, original: 0, potongan: 0 };
+      byOutlet[row.outlet] ||= { count: 0, actual: 0, original: 0, potongan: 0, ongkirPotongan: 0 };
       byOutlet[row.outlet].count += 1;
       byOutlet[row.outlet].actual += row.actualReceived || 0;
       byOutlet[row.outlet].original += row.originalBeforeDiscount || 0;
       byOutlet[row.outlet].potongan += row.potongan || 0;
+      byOutlet[row.outlet].ongkirPotongan += row.ongkirPotongan || 0;
 
       const regionKey = `${row.outlet} ${row.location}`.trim();
-      byOutletRegionAgg[regionKey] ||= { count: 0, actual: 0, original: 0, potongan: 0 };
+      byOutletRegionAgg[regionKey] ||= { count: 0, actual: 0, original: 0, potongan: 0, ongkirPotongan: 0 };
       byOutletRegionAgg[regionKey].count += 1;
       byOutletRegionAgg[regionKey].actual += row.actualReceived || 0;
       byOutletRegionAgg[regionKey].original += row.originalBeforeDiscount || 0;
       byOutletRegionAgg[regionKey].potongan += row.potongan || 0;
+      byOutletRegionAgg[regionKey].ongkirPotongan += row.ongkirPotongan || 0;
       totalActual += row.actualReceived || 0;
       totalOriginal += row.originalBeforeDiscount || 0;
       totalPotongan += row.potongan || 0;
+      totalOngkirPotongan += row.ongkirPotongan || 0;
     }
     const out = Object.fromEntries(
       Object.entries(byOutlet).map(([k, v]) => [
@@ -142,6 +168,7 @@ export async function GET(req: NextRequest) {
           count: v.count,
           actual: v.actual,
           potonganPct: v.original > 0 ? Math.round(((v.potongan / v.original) * 100) * 10) / 10 : null,
+          ongkirPotongan: v.ongkirPotongan,
         },
       ])
     );
@@ -154,12 +181,13 @@ export async function GET(req: NextRequest) {
           count: v.count,
           actual: v.actual,
           potonganPct: v.original > 0 ? Math.round(((v.potongan / v.original) * 100) * 10) / 10 : null,
+          ongkirPotongan: v.ongkirPotongan,
         },
       ])
     );
     
     logRouteComplete('reports-sales', perSale.length);
-    return NextResponse.json({ byOutlet: out, byOutletRegion, totalActual, avgPotonganPct, sales: perSale });
+    return NextResponse.json({ byOutlet: out, byOutletRegion, totalActual, totalOngkirPotongan, avgPotonganPct, sales: perSale });
   } catch (error) {
     return NextResponse.json(
       createErrorResponse("build sales report", error), 

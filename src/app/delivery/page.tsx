@@ -93,6 +93,8 @@ export default function DeliveryPage() {
   // Modal form state
   const [form, setForm] = useState({
     deliveryDate: new Date(),
+    ongkirPlan: "",
+    ongkirActual: "",
   });
   const [scannedItems, setScannedItems] = useState<Array<{ productId: number; barcode: string; product: any }>>([]);
   const [scanInput, setScanInput] = useState("");
@@ -181,6 +183,8 @@ export default function DeliveryPage() {
     if (deliveryData) {
       setForm({
         deliveryDate: deliveryData.deliveryDate ? new Date(deliveryData.deliveryDate) : new Date(),
+        ongkirPlan: "",
+        ongkirActual: "",
       });
       
       if (deliveryData.items && deliveryData.items.length > 0) {
@@ -197,6 +201,8 @@ export default function DeliveryPage() {
       // New delivery
       setForm({
         deliveryDate: new Date(),
+        ongkirPlan: "",
+        ongkirActual: "",
       });
       setScannedItems([]);
     }
@@ -323,9 +329,35 @@ export default function DeliveryPage() {
       return;
     }
 
+    // Validate Ongkir fields
+    if (!form.ongkirPlan || form.ongkirPlan === "") {
+      setError("Ongkir (Plan) harus diisi");
+      return;
+    }
+
+    if (!form.ongkirActual || form.ongkirActual === "") {
+      setError("Ongkir (Actual) harus diisi");
+      return;
+    }
+
+    const ongkirPlanNum = parseInt(form.ongkirPlan.replace(/[^\d]/g, ""));
+    const ongkirActualNum = parseInt(form.ongkirActual.replace(/[^\d]/g, ""));
+
+    if (isNaN(ongkirPlanNum) || ongkirPlanNum <= 0) {
+      setError("Ongkir (Plan) harus berupa angka yang valid");
+      return;
+    }
+
+    if (isNaN(ongkirActualNum) || ongkirActualNum <= 0) {
+      setError("Ongkir (Actual) harus berupa angka yang valid");
+      return;
+    }
+
     const payload: any = {
       orderId: selectedOrder?.id,
       deliveryDate: form.deliveryDate.toISOString(),
+      ongkirPlan: ongkirPlanNum,
+      ongkirActual: ongkirActualNum,
       items: scannedItems.map(item => ({
         productId: item.productId,
         barcode: item.barcode
@@ -578,6 +610,69 @@ export default function DeliveryPage() {
                   />
                 </div>
               </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <h3 className="font-medium mb-2">Ongkir (Plan)</h3>
+                  <Input
+                    type="text"
+                    placeholder="Rp 0"
+                    value={form.ongkirPlan}
+                    onChange={(e) => {
+                      const value = e.target.value.replace(/[^\d]/g, "");
+                      const formatted = value ? `Rp ${parseInt(value).toLocaleString("id-ID")}` : "";
+                      setForm({ ...form, ongkirPlan: formatted });
+                    }}
+                    className="w-full"
+                  />
+                </div>
+                <div>
+                  <h3 className="font-medium mb-2">Ongkir (Actual)</h3>
+                  <Input
+                    type="text"
+                    placeholder="Rp 0"
+                    value={form.ongkirActual}
+                    onChange={(e) => {
+                      const value = e.target.value.replace(/[^\d]/g, "");
+                      const formatted = value ? `Rp ${parseInt(value).toLocaleString("id-ID")}` : "";
+                      setForm({ ...form, ongkirActual: formatted });
+                    }}
+                    className="w-full"
+                  />
+                </div>
+              </div>
+
+              {/* Cost Difference Display */}
+              {form.ongkirPlan && form.ongkirActual && (
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <h3 className="font-medium mb-2">Cost Analysis</h3>
+                  {(() => {
+                    const planNum = parseInt(form.ongkirPlan.replace(/[^\d]/g, ""));
+                    const actualNum = parseInt(form.ongkirActual.replace(/[^\d]/g, ""));
+                    const difference = actualNum - planNum;
+                    const differencePercent = planNum > 0 ? (difference / planNum) * 100 : 0;
+                    
+                    return (
+                      <div className="space-y-1 text-sm">
+                        <div className="flex justify-between">
+                          <span>Plan:</span>
+                          <span>Rp {planNum.toLocaleString("id-ID")}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Actual:</span>
+                          <span>Rp {actualNum.toLocaleString("id-ID")}</span>
+                        </div>
+                        <div className="flex justify-between font-medium">
+                          <span>Selisih:</span>
+                          <span className={difference > 0 ? "text-red-600" : difference < 0 ? "text-green-600" : "text-gray-600"}>
+                            {difference > 0 ? "+" : ""}Rp {difference.toLocaleString("id-ID")} ({differencePercent > 0 ? "+" : ""}{differencePercent.toFixed(1)}%)
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>

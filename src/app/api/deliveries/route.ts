@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "../../../lib/prisma";
 import { withRetry, createErrorResponse, logRouteStart, logRouteComplete } from "../../../lib/db-utils";
+import { sendDeliveryNotification, DeliveryNotificationData } from "../../../lib/ultramsg";
 
 export async function GET(req: NextRequest) {
   try {
@@ -38,6 +39,8 @@ export async function GET(req: NextRequest) {
           orderId: true,
           deliveryDate: true,
           status: true,
+          ongkirPlan: true,
+          ongkirActual: true,
           createdAt: true,
           order: {
             select: {
@@ -106,10 +109,14 @@ export async function POST(req: NextRequest) {
     const {
       orderId,
       deliveryDate,
+      ongkirPlan,
+      ongkirActual,
       items, // Array of { productId, barcode }
     } = body as {
       orderId: number;
       deliveryDate?: string;
+      ongkirPlan?: number;
+      ongkirActual?: number;
       items?: Array<{ productId: number; barcode: string }>;
     };
 
@@ -203,6 +210,8 @@ export async function POST(req: NextRequest) {
             orderId,
             deliveryDate: deliveryDate ? new Date(deliveryDate) : null,
             status: deliveryDate ? "delivered" : "pending",
+            ongkirPlan: ongkirPlan || null,
+            ongkirActual: ongkirActual || null,
           },
           select: {
             id: true,
@@ -254,6 +263,50 @@ export async function POST(req: NextRequest) {
         return { ...delivery, items: deliveryItems };
       });
     }, 2, 'deliveries-create');
+
+    // Send WhatsApp notification if ongkir fields are provided
+    if (ongkirPlan !== undefined && ongkirActual !== undefined) {
+      try {
+        // Get order details for notification
+        const orderDetails = await withRetry(async () => {
+          return prisma.order.findUnique({
+            where: { id: orderId },
+            select: {
+              outlet: true,
+              customer: true,
+              location: true
+            }
+          });
+        }, 2, 'deliveries-get-order-details');
+
+        if (orderDetails) {
+          const costDifference = ongkirActual - ongkirPlan;
+          const costDifferencePercent = ongkirPlan > 0 ? (costDifference / ongkirPlan) * 100 : 0;
+
+          const notificationData: DeliveryNotificationData = {
+            outlet: orderDetails.outlet,
+            location: orderDetails.location,
+            customer: orderDetails.customer || "-",
+            orderId: orderId,
+            deliveryDate: created.deliveryDate?.toISOString() || new Date().toISOString(),
+            ongkirPlan,
+            ongkirActual,
+            costDifference,
+            costDifferencePercent,
+            items: created.items.map(item => ({
+              name: item.product.name,
+              barcode: item.barcode,
+              price: item.price
+            }))
+          };
+
+          await sendDeliveryNotification(notificationData);
+        }
+      } catch (error) {
+        console.error("Error sending delivery notification:", error);
+        // Don't fail the delivery creation if notification fails
+      }
+    }
 
     logRouteComplete('deliveries-create', 1);
     return NextResponse.json(created, { status: 201 });

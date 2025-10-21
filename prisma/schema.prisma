@@ -91,6 +91,8 @@ model Delivery {
   orderId     Int
   deliveryDate DateTime?
   status      String        @default("pending") // pending, delivered
+  ongkirPlan  Int?          // Ongkir (Plan) in Rupiah
+  ongkirActual Int?         // Ongkir (Actual) in Rupiah
   createdAt   DateTime      @default(now())
   items       DeliveryItem[]
   order       Order         @relation(fields: [orderId], references: [id])
