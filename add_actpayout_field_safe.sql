@@ -16,23 +16,31 @@ BEGIN
     END IF;
 END $$;
 
--- Step 2: Check and update existing 'pending' orders
+-- Step 2: Normalize existing statuses to PAID / NOT PAID
 DO $$
 DECLARE
-    pending_count INTEGER;
+    to_paid_count INTEGER;
+    to_not_paid_count INTEGER;
 BEGIN
-    SELECT COUNT(*) INTO pending_count FROM "Order" WHERE "status" = 'pending';
-    
-    IF pending_count > 0 THEN
-        UPDATE "Order" SET "status" = 'confirmed' WHERE "status" = 'pending';
-        RAISE NOTICE 'Updated % pending orders to confirmed', pending_count;
+    SELECT COUNT(*) INTO to_paid_count FROM "Order" WHERE "status" IN ('pending', 'confirmed');
+    IF to_paid_count > 0 THEN
+        UPDATE "Order" SET "status" = 'PAID' WHERE "status" IN ('pending', 'confirmed');
+        RAISE NOTICE 'Updated % orders to PAID status', to_paid_count;
     ELSE
-        RAISE NOTICE 'No pending orders found';
+        RAISE NOTICE 'No orders required PAID normalization';
+    END IF;
+
+    SELECT COUNT(*) INTO to_not_paid_count FROM "Order" WHERE "status" = 'cancelled';
+    IF to_not_paid_count > 0 THEN
+        UPDATE "Order" SET "status" = 'NOT PAID' WHERE "status" = 'cancelled';
+        RAISE NOTICE 'Updated % orders to NOT PAID status', to_not_paid_count;
+    ELSE
+        RAISE NOTICE 'No orders required NOT PAID normalization';
     END IF;
 END $$;
 
--- Step 3: Update default status to 'confirmed'
-ALTER TABLE "Order" ALTER COLUMN "status" SET DEFAULT 'confirmed';
+-- Step 3: Update default status to 'PAID'
+ALTER TABLE "Order" ALTER COLUMN "status" SET DEFAULT 'PAID';
 
 -- Step 4: Update constraint safely
 DO $$
@@ -48,7 +56,7 @@ BEGIN
     
     -- Add new constraint
     ALTER TABLE "Order" ADD CONSTRAINT "Order_status_check" 
-    CHECK ("status" IN ('confirmed', 'cancelled'));
+    CHECK ("status" IN ('PAID', 'NOT PAID'));
     RAISE NOTICE 'Added new Order_status_check constraint';
 END $$;
 
@@ -56,7 +64,7 @@ END $$;
 SELECT 
     'Migration completed successfully' as status,
     COUNT(*) as total_orders,
-    COUNT(CASE WHEN "status" = 'confirmed' THEN 1 END) as confirmed_orders,
-    COUNT(CASE WHEN "status" = 'cancelled' THEN 1 END) as cancelled_orders,
+    COUNT(CASE WHEN "status" = 'PAID' THEN 1 END) as paid_orders,
+    COUNT(CASE WHEN "status" = 'NOT PAID' THEN 1 END) as not_paid_orders,
     COUNT(CASE WHEN "actPayout" IS NOT NULL THEN 1 END) as orders_with_actpayout
 FROM "Order";

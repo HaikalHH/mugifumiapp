@@ -4,12 +4,12 @@
 -- Step 1: Drop the new constraint
 ALTER TABLE "Order" DROP CONSTRAINT IF EXISTS "Order_status_check";
 
--- Step 2: Restore the original constraint (allowing 'pending')
+-- Step 2: Restore the payment status constraint
 ALTER TABLE "Order" ADD CONSTRAINT "Order_status_check" 
-CHECK ("status" IN ('pending', 'confirmed', 'cancelled'));
+CHECK ("status" IN ('PAID', 'NOT PAID'));
 
--- Step 3: Restore default status to 'pending'
-ALTER TABLE "Order" ALTER COLUMN "status" SET DEFAULT 'pending';
+-- Step 3: Restore default status to 'PAID'
+ALTER TABLE "Order" ALTER COLUMN "status" SET DEFAULT 'PAID';
 
 -- Step 4: Remove actPayout column
 ALTER TABLE "Order" DROP COLUMN IF EXISTS "actPayout";
@@ -18,7 +18,6 @@ ALTER TABLE "Order" DROP COLUMN IF EXISTS "actPayout";
 SELECT 
     'Rollback completed successfully' as status,
     COUNT(*) as total_orders,
-    COUNT(CASE WHEN "status" = 'pending' THEN 1 END) as pending_orders,
-    COUNT(CASE WHEN "status" = 'confirmed' THEN 1 END) as confirmed_orders,
-    COUNT(CASE WHEN "status" = 'cancelled' THEN 1 END) as cancelled_orders
+    COUNT(CASE WHEN "status" = 'PAID' THEN 1 END) as paid_orders,
+    COUNT(CASE WHEN "status" = 'NOT PAID' THEN 1 END) as not_paid_orders
 FROM "Order";

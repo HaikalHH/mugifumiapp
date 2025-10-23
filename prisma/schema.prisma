@@ -65,7 +65,7 @@ model Order {
   id             Int        @id @default(autoincrement())
   outlet         String
   customer       String?
-  status         String     @default("confirmed")
+  status         String     @default("PAID")
   orderDate      DateTime
   location       String
   discount       Float?

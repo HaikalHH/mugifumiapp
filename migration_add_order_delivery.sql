@@ -6,7 +6,7 @@ CREATE TABLE "Order" (
     "id" SERIAL PRIMARY KEY,
     "outlet" TEXT NOT NULL,
     "customer" TEXT,
-    "status" TEXT NOT NULL DEFAULT 'confirmed',
+    "status" TEXT NOT NULL DEFAULT 'PAID',
     "orderDate" TIMESTAMP(3) NOT NULL,
     "location" TEXT NOT NULL,
     "discount" DOUBLE PRECISION,
@@ -69,7 +69,7 @@ ALTER TABLE "OrderItem" ADD CONSTRAINT "OrderItem_orderId_productId_key" UNIQUE 
 ALTER TABLE "DeliveryItem" ADD CONSTRAINT "DeliveryItem_deliveryId_barcode_key" UNIQUE ("deliveryId", "barcode");
 
 -- Add check constraints
-ALTER TABLE "Order" ADD CONSTRAINT "Order_status_check" CHECK ("status" IN ('confirmed', 'cancelled'));
+ALTER TABLE "Order" ADD CONSTRAINT "Order_status_check" CHECK ("status" IN ('PAID', 'NOT PAID'));
 ALTER TABLE "Delivery" ADD CONSTRAINT "Delivery_status_check" CHECK ("status" IN ('pending', 'delivered'));
 ALTER TABLE "OrderItem" ADD CONSTRAINT "OrderItem_quantity_check" CHECK ("quantity" > 0);
 ALTER TABLE "OrderItem" ADD CONSTRAINT "OrderItem_price_check" CHECK ("price" >= 0);
@@ -81,7 +81,7 @@ COMMENT ON TABLE "OrderItem" IS 'Items within each order';
 COMMENT ON TABLE "Delivery" IS 'Delivery records for orders';
 COMMENT ON TABLE "DeliveryItem" IS 'Items delivered with barcode tracking';
 
-COMMENT ON COLUMN "Order"."status" IS 'Order status: pending, confirmed, cancelled';
+COMMENT ON COLUMN "Order"."status" IS 'Order status: PAID or NOT PAID';
 COMMENT ON COLUMN "Order"."totalAmount" IS 'Total amount after discount in Rupiah';
 COMMENT ON COLUMN "Delivery"."status" IS 'Delivery status: pending, delivered';
 COMMENT ON COLUMN "DeliveryItem"."barcode" IS 'Scanned barcode from inventory';

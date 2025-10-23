@@ -47,6 +47,20 @@ type Product = {
 
 import { useAuth, lockedLocation } from "../providers";
 
+type OrderStatus = "PAID" | "NOT PAID";
+const ORDER_STATUS_OPTIONS: OrderStatus[] = ["PAID", "NOT PAID"];
+const DEFAULT_ORDER_STATUS: OrderStatus = "PAID";
+
+function normalizeOrderStatus(status?: string | null): OrderStatus {
+  if (!status) return "PAID";
+  const normalized = status.trim().toUpperCase().replace(/\s+/g, " ");
+  return normalized === "NOT PAID" || normalized === "NOT_PAID" ? "NOT PAID" : "PAID";
+}
+
+function getStatusBadgeColor(status: OrderStatus) {
+  return status === "PAID" ? "green" : "red";
+}
+
 function getInitialLocation(): string {
   if (typeof window !== "undefined") {
     const u = localStorage.getItem("mf_username");
@@ -65,9 +79,16 @@ export default function OrdersPage() {
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
 
   // Modal form state
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<{
+    customer: string;
+    status: OrderStatus;
+    orderDate: Date;
+    discount: string;
+    estPayout: string;
+    actPayout: string;
+  }>({
     customer: "",
-    status: "confirmed",
+    status: DEFAULT_ORDER_STATUS,
     orderDate: new Date(),
     discount: "",
     estPayout: "",
@@ -136,7 +157,7 @@ export default function OrdersPage() {
     setEditingLocation(""); // Reset editing location
     setForm({
       customer: "",
-      status: "confirmed",
+      status: DEFAULT_ORDER_STATUS,
       orderDate: new Date(),
       discount: "",
       estPayout: "",
@@ -179,7 +200,8 @@ export default function OrdersPage() {
     // Find the order and show details
     const order = orders.find(o => o.id === orderId);
     if (order) {
-      alert(`View Order #${orderId}\nOutlet: ${order.outlet}\nCustomer: ${order.customer || '-'}\nStatus: ${order.status}\nTotal: Rp ${order.totalAmount?.toLocaleString('id-ID') || '0'}`);
+      const statusLabel = normalizeOrderStatus(order.status);
+      alert(`View Order #${orderId}\nOutlet: ${order.outlet}\nCustomer: ${order.customer || '-'}\nStatus: ${statusLabel}\nTotal: Rp ${order.totalAmount?.toLocaleString('id-ID') || '0'}`);
     }
   };
 
@@ -192,7 +214,7 @@ export default function OrdersPage() {
       setEditingLocation(order.location); // Set editing location
       setForm({
         customer: order.customer || "",
-        status: order.status,
+        status: normalizeOrderStatus(order.status),
         orderDate: new Date(order.orderDate),
         discount: order.discount?.toString() || "",
         estPayout: "",
@@ -485,7 +507,21 @@ export default function OrdersPage() {
             </div>
             <div className="flex flex-col gap-1">
               <Label>Status</Label>
-              <Input value="Confirmed" readOnly className="bg-gray-50" />
+              <Select
+                value={form.status}
+                onValueChange={(value) => setForm({ ...form, status: normalizeOrderStatus(value) })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {ORDER_STATUS_OPTIONS.map((statusOption) => (
+                    <SelectItem key={statusOption} value={statusOption}>
+                      {statusOption}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="flex flex-col gap-1">
               <Label>Order Date</Label>
@@ -665,17 +701,19 @@ export default function OrdersPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {orders.map((order) => (
-              <TableRow key={order.id}>
-                <TableCell>{order.id}</TableCell>
+            {orders.map((order) => {
+              const statusLabel = normalizeOrderStatus(order.status);
+              return (
+                <TableRow key={order.id}>
+                  <TableCell>{order.id}</TableCell>
                 <TableCell>
                   <div className="flex items-center gap-2">
                     <span>{order.outlet}</span>
                     {(order.outlet === "Tokopedia" || order.outlet === "Shopee" || order.outlet === "Cafe" || order.outlet === "Wholesale" || order.outlet === "Complain") && (
                       <Badge color={order.actPayout && Number(order.actPayout) > 0 ? "green" : "red"}>
                         {order.actPayout && Number(order.actPayout) > 0 
-                          ? `Paid - Rp ${Number(order.actPayout).toLocaleString("id-ID")}` 
-                          : "Not Paid"}
+                          ? `Rp ${Number(order.actPayout).toLocaleString("id-ID")}` 
+                          :"Actual Kosong"}
                       </Badge>
                     )}
                   </div>
@@ -684,8 +722,8 @@ export default function OrdersPage() {
                 <TableCell>{order.customer || "-"}</TableCell>
                 <TableCell>{new Date(order.orderDate).toLocaleDateString()}</TableCell>
                 <TableCell>
-                  <Badge color={order.status === "confirmed" ? "green" : order.status === "cancelled" ? "red" : "gray"}>
-                    {order.status}
+                  <Badge color={getStatusBadgeColor(statusLabel)}>
+                    {statusLabel}
                   </Badge>
                 </TableCell>
                 <TableCell>
@@ -730,8 +768,9 @@ export default function OrdersPage() {
                     )}
                   </div>
                 </TableCell>
-              </TableRow>
-            ))}
+                </TableRow>
+              );
+            })}
           </TableBody>
         </Table>
         <div className="flex items-center justify-between mt-2">

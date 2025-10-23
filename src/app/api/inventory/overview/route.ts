@@ -44,7 +44,7 @@ export async function GET() {
         where: {
           order: {
             status: {
-              notIn: ['cancelled', 'completed']
+              in: ['PAID', 'NOT PAID']
             }
           }
         },
@@ -179,5 +179,4 @@ export async function GET() {
     );
   }
 }
-
 

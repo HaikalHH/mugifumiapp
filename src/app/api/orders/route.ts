@@ -2,6 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "../../../lib/prisma";
 import { withRetry, createErrorResponse, logRouteStart, logRouteComplete } from "../../../lib/db-utils";
 
+function normalizeOrderStatus(rawStatus?: string | null): "PAID" | "NOT PAID" {
+  if (!rawStatus) return "PAID";
+  const normalized = rawStatus.trim().toUpperCase().replace(/\s+/g, " ");
+  if (normalized === "NOT PAID" || normalized === "NOT_PAID") {
+    return "NOT PAID";
+  }
+  return "PAID";
+}
+
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
@@ -148,7 +157,7 @@ export async function POST(req: NextRequest) {
           data: {
             outlet,
             customer: customer || null,
-            status: status || "confirmed",
+            status: normalizeOrderStatus(status),
             orderDate: orderDate ? new Date(orderDate) : new Date(),
             location,
             discount: typeof discount === "number" && Number.isFinite(discount) ? discount : null,
