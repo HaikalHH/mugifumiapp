@@ -41,6 +41,12 @@ export default function HomePage() {
           <div className="text-sm text-gray-600">Ringkasan inventory & penjualan</div>
         </Link>
         )}
+        {hasAccess(username, "finance") && (
+        <Link href="/finance" className="block rounded-md border p-4 hover:bg-gray-50">
+          <div className="font-medium">Finance Operations</div>
+          <div className="text-sm text-gray-600">Monthly plan, actual, dan laporan finance</div>
+        </Link>
+        )}
       </div>
     </main>
   );

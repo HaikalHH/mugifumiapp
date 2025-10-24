@@ -41,7 +41,10 @@ export function useAuth() {
   return useContext(AuthContext);
 }
 
-export function hasAccess(username: Role | null, page: "products" | "inventory" | "orders" | "delivery" | "reports"): boolean {
+export function hasAccess(
+  username: Role | null,
+  page: "products" | "inventory" | "orders" | "delivery" | "reports" | "finance",
+): boolean {
   if (!username) return false;
   const u = String(username).toLowerCase();
   if (u === "admin") return true;
@@ -57,4 +60,3 @@ export function lockedLocation(username: Role | null): "Bandung" | "Jakarta" | n
   if (u === "jakarta") return "Jakarta";
   return null;
 }
-

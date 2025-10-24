@@ -107,3 +107,56 @@ model DeliveryItem {
   product     Product   @relation(fields: [productId], references: [id])
   delivery    Delivery  @relation(fields: [deliveryId], references: [id])
 }
+
+enum FinanceCategory {
+  BAHAN
+  PAYROLL
+  BUILDING
+  OPERASIONAL
+  TRANSPORT
+  PERLENGKAPAN
+  MARKETING
+}
+
+model FinancePeriod {
+  id        Int                 @id @default(autoincrement())
+  name      String
+  month     Int
+  year      Int
+  startDate DateTime
+  endDate   DateTime
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
+  plans     FinancePlanEntry[]
+  actuals   FinanceActualEntry[]
+
+  @@unique([month, year])
+}
+
+model FinancePlanEntry {
+  id        Int             @id @default(autoincrement())
+  periodId  Int
+  category  FinanceCategory
+  amount    Int
+  data      Json?
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  period    FinancePeriod   @relation(fields: [periodId], references: [id], onDelete: Cascade)
+
+  @@index([periodId, category])
+}
+
+model FinanceActualEntry {
+  id        Int             @id @default(autoincrement())
+  periodId  Int
+  category  FinanceCategory
+  amount    Int
+  data      Json?
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  period    FinancePeriod   @relation(fields: [periodId], references: [id], onDelete: Cascade)
+
+  @@index([periodId, category])
+}
