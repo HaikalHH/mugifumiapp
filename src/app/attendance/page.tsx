@@ -177,7 +177,8 @@ export default function AttendancePage() {
         </div>
       </div>
 
-      <Table>
+      <div className="overflow-x-auto">
+      <Table className="min-w-[640px] md:min-w-0">
         <TableHeader>
           <TableRow>
             <TableHead>Tanggal (Jakarta)</TableHead>
@@ -206,6 +207,7 @@ export default function AttendancePage() {
           )}
         </TableBody>
       </Table>
+      </div>
 
       {overtime.length > 0 && (
         <div className="space-y-2">

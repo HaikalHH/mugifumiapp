@@ -451,7 +451,8 @@ export default function DeliveryPage() {
 
       <div>
         <h2 className="font-medium mb-2">Pending Orders (Ready for Delivery)</h2>
-        <Table>
+        <div className="overflow-x-auto">
+        <Table className="min-w-[720px] md:min-w-0">
           <TableHeader>
             <TableRow>
               <TableHead className="text-left">Order ID</TableHead>
@@ -493,6 +494,7 @@ export default function DeliveryPage() {
             )}
           </TableBody>
         </Table>
+        </div>
         <div className="flex items-center justify-between mt-2">
           <div className="text-sm text-gray-600">
             Showing {((pendingPage - 1) * 10) + 1} to {Math.min(pendingPage * 10, pendingTotal)} of {pendingTotal} orders

@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { ReactNode, useMemo, useState } from "react";
 import { useAuth, hasAccess } from "../app/providers";
 import { Button } from "../components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog";
 
 export default function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -38,7 +39,8 @@ export default function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen bg-white text-black flex">
-      <aside className="w-60 border-r bg-black text-white flex flex-col">
+      {/* Sidebar (desktop only) */}
+      <aside className="hidden md:flex w-60 border-r bg-black text-white flex-col">
         <div className="flex items-center gap-3 p-4 border-b border-white/10">
           <Image src="/assets/Logo White.png" alt="Logo" width={300} height={700} className="rounded" />
         </div>
@@ -79,11 +81,56 @@ export default function AppShell({ children }: { children: ReactNode }) {
       </aside>
       <main className="flex-1">
         <header className="h-14 border-b flex items-center justify-between px-4">
-          <div className="text-sm text-gray-600">{user ? `Hi, ${user.name}` : ''}</div>
+          {/* Mobile: menu + small logo */}
+          <div className="flex items-center gap-2">
+            <div className="md:hidden flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => setReportOpen(true)}>Menu</Button>
+              <Image src="/assets/Logo White.png" alt="Logo" width={28} height={28} className="rounded" />
+            </div>
+            <div className="hidden md:block text-sm text-gray-600">{user ? `Hi, ${user.name}` : ''}</div>
+          </div>
           <div className="text-sm text-gray-600">{user ? user.role : ''}</div>
         </header>
         <div className="p-4">{children}</div>
       </main>
+
+      {/* Mobile navigation dialog */}
+      <Dialog open={reportOpen && typeof window !== 'undefined' && window.innerWidth < 768} onOpenChange={setReportOpen}>
+        <DialogContent className="p-0 sm:max-w-sm">
+          <DialogHeader className="px-4 pt-4 pb-2">
+            <DialogTitle className="text-base">Navigasi</DialogTitle>
+          </DialogHeader>
+          <nav className="p-2 space-y-1">
+            {links.filter(l => l.show).map((l) => {
+              const active = pathname === l.href;
+              return (
+                <Link
+                  key={l.href}
+                  href={l.href}
+                  onClick={() => setReportOpen(false)}
+                  className={`block rounded px-3 py-2 text-sm ${active ? 'bg-black text-white' : 'bg-white text-black hover:bg-gray-100'}`}
+                >
+                  {l.label}
+                </Link>
+              );
+            })}
+            {hasAccess(user, "reports") && (
+              <div className="mt-2">
+                <div className="px-3 py-1 text-xs uppercase tracking-wide text-gray-500">Reports</div>
+                <div className="pl-2 space-y-1">
+                  <Link href="/reports/sales" onClick={() => setReportOpen(false)} className={`block rounded px-3 py-2 text-sm ${pathname === '/reports/sales' ? 'bg-black text-white' : 'bg-white text-black hover:bg-gray-100'}`}>Sales</Link>
+                  <Link href="/reports/inventory" onClick={() => setReportOpen(false)} className={`block rounded px-3 py-2 text-sm ${pathname === '/reports/inventory' ? 'bg-black text-white' : 'bg-white text-black hover:bg-gray-100'}`}>Inventory</Link>
+                </div>
+              </div>
+            )}
+            {user && (
+              <div className="px-2 pt-2">
+                <Button variant="outline" size="sm" className="w-full" onClick={() => { setUser(null); setReportOpen(false); router.replace('/login'); }}>Logout</Button>
+              </div>
+            )}
+          </nav>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
