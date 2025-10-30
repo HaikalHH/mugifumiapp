@@ -2,7 +2,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { ReactNode, useMemo } from "react";
+import { ReactNode, useMemo, useState } from "react";
 import { useAuth, hasAccess } from "../app/providers";
 import { Button } from "../components/ui/button";
 
@@ -19,7 +19,6 @@ export default function AppShell({ children }: { children: ReactNode }) {
       { href: "/inventory", label: "Inventory", show: hasAccess(user, "inventory") },
       { href: "/orders", label: "Orders", show: hasAccess(user, "orders") },
       { href: "/delivery", label: "Delivery", show: hasAccess(user, "delivery") },
-      { href: "/reports", label: "Reports", show: hasAccess(user, "reports") },
       { href: "/finance", label: "Finance", show: hasAccess(user, "finance") },
       { href: "/attendance", label: "Attendance", show: hasAccess(user, "attendance") },
       { href: "/overtime", label: "Overtime", show: hasAccess(user, "overtime") },
@@ -31,6 +30,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
   );
 
   const hideShell = pathname === "/login" || pathname === "/forgot";
+  const [reportOpen, setReportOpen] = useState(() => pathname.startsWith("/reports"));
 
   if (hideShell) {
     return <>{children}</>;
@@ -51,6 +51,23 @@ export default function AppShell({ children }: { children: ReactNode }) {
               </Link>
             );
           })}
+          {hasAccess(user, "reports") && (
+            <div className="space-y-1">
+              <button
+                type="button"
+                className="w-full text-left block rounded px-3 py-2 text-sm hover:bg-white/10"
+                onClick={() => setReportOpen((v) => !v)}
+              >
+                Reports
+              </button>
+              {reportOpen && (
+                <div className="pl-3 space-y-1">
+                  <Link href="/reports/sales" className={`block rounded px-3 py-2 text-sm ${pathname === "/reports/sales" ? "bg-white text-black" : "hover:bg-white/10"}`}>Sales</Link>
+                  <Link href="/reports/inventory" className={`block rounded px-3 py-2 text-sm ${pathname === "/reports/inventory" ? "bg-white text-black" : "hover:bg-white/10"}`}>Inventory</Link>
+                </div>
+              )}
+            </div>
+          )}
         </nav>
         <div className="p-4 border-t border-white/10 text-xs text-white/80">
           <div className="font-medium text-white">{user ? user.name : "-"}</div>
