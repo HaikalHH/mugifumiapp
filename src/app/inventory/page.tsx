@@ -1,23 +1,29 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../components/ui/dialog";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui/table";
+import { Badge } from "../../components/ui/badge";
 
 import { useAuth, lockedLocation, hasAccess } from "../providers";
 
 function getInitialLocation(): string {
   if (typeof window !== "undefined") {
-    const u = localStorage.getItem("mf_username");
-    const locked = lockedLocation((u as any) || null);
-    if (locked) return locked;
+    const raw = localStorage.getItem("mf_user");
+    try {
+      const parsed = raw ? JSON.parse(raw) : null;
+      const locked = lockedLocation(parsed);
+      if (locked) return locked;
+    } catch {}
   }
   return "Bandung";
 }
 
 export default function InventoryPage() {
-  const { username } = useAuth();
+  const { user } = useAuth();
   const [barcode, setBarcode] = useState("");
   const [location, setLocation] = useState<string>(() => getInitialLocation());
   
@@ -49,11 +55,11 @@ export default function InventoryPage() {
   });
   const [scanError, setScanError] = useState<string>("");
 
-  const load = async () => {
+  const load = useCallback(async () => {
     const res = await fetch("/api/inventory/overview");
     const data = await res.json();
     setOverview(data);
-  };
+  }, []);
 
   const loadInventoryList = async (productKey: string, loc: string, search: string = "", status: string = "ALL", page: number = 1) => {
     const match = /\(([^)]+)\)$/.exec(productKey);
@@ -72,17 +78,17 @@ export default function InventoryPage() {
     return data;
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [load]);
 
   // lock location for Bandung/Jakarta
   useEffect(() => {
-    const locked = lockedLocation(username);
+    const locked = lockedLocation(user);
     if (locked) setLocation(locked);
-  }, [username]);
+  }, [user]);
 
   const add = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (username === "Sales") {
+    if (user?.role === "Sales") {
       setScanError("❌ Sales hanya bisa view inventory");
       return;
     }
@@ -122,7 +128,7 @@ export default function InventoryPage() {
         </div>
         <div className="flex flex-col gap-1">
           <Label>Location</Label>
-          <Select value={location} onValueChange={(v) => setLocation(v)} disabled={Boolean(lockedLocation(username))}>
+          <Select value={location} onValueChange={(v) => setLocation(v)} disabled={Boolean(lockedLocation(user))}>
             <SelectTrigger>
               <SelectValue placeholder="Pilih lokasi" />
             </SelectTrigger>
@@ -133,7 +139,7 @@ export default function InventoryPage() {
           </Select>
         </div>
         <div className="flex">
-          <Button className="w-full" type="submit" disabled={username === "Sales"}>Scan In</Button>
+          <Button className="w-full" type="submit" disabled={user?.role === "Sales"}>Scan In</Button>
         </div>
       </form>
       
@@ -153,308 +159,307 @@ export default function InventoryPage() {
           {overview && Object.entries(overview.byLocation).map(([loc, rows]) => (
             <div key={loc} className="mb-4">
               <div className="font-medium mb-2">{loc}</div>
-              <table className="w-full text-sm border">
-                <thead className="bg-gray-50 border-b">
-                  <tr>
-                    <th className="p-2 text-left font-medium">Menu</th>
-                    <th className="p-2 text-right font-medium">Total</th>
-                    <th className="p-2 text-right font-medium">Reserved</th>
-                    <th className="p-2 text-right font-medium">Available</th>
-                  </tr>
-                </thead>
-                <tbody>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="text-left">Menu</TableHead>
+                    <TableHead className="text-right">Total</TableHead>
+                    <TableHead className="text-right">Reserved</TableHead>
+                    <TableHead className="text-right">Available</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {Object.entries(rows).map(([k, stockInfo]) => (
-                    <tr key={k} className="border-t hover:bg-gray-50 cursor-pointer" onClick={async () => {
-                      const data = await loadInventoryList(k, loc);
-                      setDetailModal({ 
-                        open: true, 
-                        productKey: k, 
-                        items: data.items, 
-                        search: "", 
-                        loc: loc,
-                        status: "ALL",
-                        page: 1,
-                        pagination: data.pagination
-                      });
-                    }}>
-                      <td className="p-2">{k}</td>
-                      <td className="p-2 text-right font-medium">{stockInfo.total}</td>
-                      <td className="p-2 text-right text-orange-600">{stockInfo.reserved}</td>
-                      <td className={`p-2 text-right font-medium ${stockInfo.available < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                    <TableRow
+                      key={k}
+                      className="cursor-pointer"
+                      onClick={async () => {
+                        const data = await loadInventoryList(k, loc);
+                        setDetailModal({
+                          open: true,
+                          productKey: k,
+                          items: data.items,
+                          search: "",
+                          loc: loc,
+                          status: "ALL",
+                          page: 1,
+                          pagination: data.pagination,
+                        });
+                      }}
+                    >
+                      <TableCell>{k}</TableCell>
+                      <TableCell className="text-right font-medium">{stockInfo.total}</TableCell>
+                      <TableCell className="text-right text-orange-600">{stockInfo.reserved}</TableCell>
+                      <TableCell className={`text-right font-medium ${stockInfo.available < 0 ? 'text-red-600' : 'text-green-600'}`}>
                         {stockInfo.available}
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
           ))}
         </div>
         <div>
           <h2 className="font-medium mb-2">All Locations</h2>
-          <table className="w-full text-sm border">
-            <thead className="bg-gray-50 border-b">
-              <tr>
-                <th className="p-2 text-left font-medium">Menu</th>
-                <th className="p-2 text-right font-medium">Total</th>
-                <th className="p-2 text-right font-medium">Reserved</th>
-                <th className="p-2 text-right font-medium">Available</th>
-              </tr>
-            </thead>
-            <tbody>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="text-left">Menu</TableHead>
+                <TableHead className="text-right">Total</TableHead>
+                <TableHead className="text-right">Reserved</TableHead>
+                <TableHead className="text-right">Available</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {overview && Object.entries(overview.all).map(([k, stockInfo]) => (
-                <tr key={k} className="border-t">
-                  <td className="p-2">{k}</td>
-                  <td className="p-2 text-right font-medium">{stockInfo.total}</td>
-                  <td className="p-2 text-right text-orange-600">{stockInfo.reserved}</td>
-                  <td className={`p-2 text-right font-medium ${stockInfo.available < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                <TableRow key={k}>
+                  <TableCell>{k}</TableCell>
+                  <TableCell className="text-right font-medium">{stockInfo.total}</TableCell>
+                  <TableCell className="text-right text-orange-600">{stockInfo.reserved}</TableCell>
+                  <TableCell className={`text-right font-medium ${stockInfo.available < 0 ? 'text-red-600' : 'text-green-600'}`}>
                     {stockInfo.available}
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       </div>
-
-      {detailModal.open && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-md w-full max-w-4xl p-6 space-y-4 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between">
-              <div className="font-medium text-lg">Items - {detailModal.productKey}</div>
-              <button className="text-gray-600 hover:text-gray-800 text-xl" onClick={() => setDetailModal({ 
-                open: false, 
-                productKey: null, 
-                items: [], 
-                search: "", 
-                loc: null,
-                status: "ALL",
-                page: 1,
-                pagination: null
-              })}>×</button>
+      <Dialog
+        open={detailModal.open}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDetailModal({
+              open: false,
+              productKey: null,
+              items: [],
+              search: "",
+              loc: null,
+              status: "ALL",
+              page: 1,
+              pagination: null,
+            });
+          }
+        }}
+      >
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Items - {detailModal.productKey}</DialogTitle>
+          </DialogHeader>
+          {/* Search and Filter Controls */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="flex flex-col gap-1">
+              <Label>Search Barcode</Label>
+              <Input
+                placeholder="Cari barcode"
+                value={detailModal.search}
+                onChange={async (e) => {
+                  const search = e.target.value;
+                  const data = await loadInventoryList(
+                    detailModal.productKey || "",
+                    detailModal.loc || "",
+                    search,
+                    detailModal.status,
+                    1,
+                  );
+                  setDetailModal((prev) => ({
+                    ...prev,
+                    search,
+                    items: data.items,
+                    pagination: data.pagination,
+                    page: 1,
+                  }));
+                }}
+              />
             </div>
-            
-            {/* Search and Filter Controls */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="flex flex-col gap-1">
-                <label className="text-sm font-medium">Search Barcode</label>
-                <input 
-                  className="border rounded p-2" 
-                  placeholder="Cari barcode" 
-                  value={detailModal.search}
-                  onChange={async (e) => {
-                    const search = e.target.value;
-                    const data = await loadInventoryList(
-                      detailModal.productKey || "", 
-                      detailModal.loc || "", 
-                      search, 
-                      detailModal.status, 
-                      1
-                    );
-                    setDetailModal(prev => ({ 
-                      ...prev, 
-                      search, 
-                      items: data.items, 
-                      pagination: data.pagination,
-                      page: 1
-                    }));
-                  }} 
-                />
-              </div>
-              <div className="flex flex-col gap-1">
-                <label className="text-sm font-medium">Filter Status</label>
-                <Select 
-                  value={detailModal.status} 
-                  onValueChange={async (status) => {
-                    const data = await loadInventoryList(
-                      detailModal.productKey || "", 
-                      detailModal.loc || "", 
-                      detailModal.search, 
-                      status, 
-                      1
-                    );
-                    setDetailModal(prev => ({ 
-                      ...prev, 
-                      status, 
-                      items: data.items, 
-                      pagination: data.pagination,
-                      page: 1
-                    }));
-                  }}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Semua Status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ALL">Semua Status</SelectItem>
-                    <SelectItem value="READY">Ready</SelectItem>
-                    <SelectItem value="SOLD">Sold</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex flex-col gap-1 justify-end">
-                <div className="text-sm text-gray-600">
-                  Total: {detailModal.pagination?.totalCount || 0} items
-                </div>
+            <div className="flex flex-col gap-1">
+              <Label>Filter Status</Label>
+              <Select
+                value={detailModal.status}
+                onValueChange={async (status) => {
+                  const data = await loadInventoryList(
+                    detailModal.productKey || "",
+                    detailModal.loc || "",
+                    detailModal.search,
+                    status,
+                    1,
+                  );
+                  setDetailModal((prev) => ({
+                    ...prev,
+                    status,
+                    items: data.items,
+                    pagination: data.pagination,
+                    page: 1,
+                  }));
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Semua Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">Semua Status</SelectItem>
+                  <SelectItem value="READY">Ready</SelectItem>
+                  <SelectItem value="SOLD">Sold</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex flex-col gap-1 justify-end">
+              <div className="text-sm text-gray-600">
+                Total: {detailModal.pagination?.totalCount || 0} items
               </div>
             </div>
+          </div>
 
-            {/* Table */}
-            <div className="border rounded-md overflow-hidden">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="p-3 text-left font-medium">Barcode</th>
-                    <th className="p-3 text-left font-medium">Location</th>
-                    <th className="p-3 text-left font-medium">Status</th>
-                    <th className="p-3 text-left font-medium">Created</th>
-                    <th className="p-3 text-center font-medium">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {detailModal.items.map((it) => (
-                    <tr key={it.barcode} className="border-t hover:bg-gray-50">
-                      <td className="p-3 font-mono text-sm">{it.barcode}</td>
-                      <td className="p-3">{it.location}</td>
-                      <td className="p-3">
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                          it.status === 'READY' 
-                            ? 'bg-green-100 text-green-800' 
-                            : 'bg-red-100 text-red-800'
-                        }`}>
-                          {it.status}
-                        </span>
-                      </td>
-                      <td className="p-3 text-gray-600">{new Date(it.createdAt).toLocaleString()}</td>
-                      <td className="p-3 text-center">
-                        <div className="flex gap-2 justify-center">
-                          <button 
-                            className="text-blue-600 hover:text-blue-800 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed" 
-                            disabled={username === "Sales"}
+          {/* Table */}
+          <div className="border rounded-md overflow-hidden">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="text-left">Barcode</TableHead>
+                  <TableHead className="text-left">Location</TableHead>
+                  <TableHead className="text-left">Status</TableHead>
+                  <TableHead className="text-left">Created</TableHead>
+                  <TableHead className="text-center">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {detailModal.items.map((it) => (
+                  <TableRow key={it.barcode}>
+                    <TableCell className="font-mono text-sm">{it.barcode}</TableCell>
+                    <TableCell>{it.location}</TableCell>
+                    <TableCell>
+                      <Badge color={it.status === "READY" ? "green" : "red"}>{it.status}</Badge>
+                    </TableCell>
+                    <TableCell className="text-gray-600">{new Date(it.createdAt).toLocaleString()}</TableCell>
+                    <TableCell className="text-center">
+                      <div className="flex gap-2 justify-center">
+                        <Button
+                          variant="link"
+                          className="p-0 h-auto disabled:opacity-50 disabled:cursor-not-allowed"
+                          disabled={user?.role === "Sales"}
+                          onClick={async () => {
+                            if (user?.role === "Sales") return;
+                            const toLocation = it.location === "Bandung" ? "Jakarta" : "Bandung";
+                            await fetch("/api/inventory/move", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ barcode: it.barcode, toLocation }),
+                            });
+                            const data = await loadInventoryList(
+                              detailModal.productKey || "",
+                              toLocation,
+                              detailModal.search,
+                              detailModal.status,
+                              detailModal.page,
+                            );
+                            setDetailModal((prev) => ({
+                              ...prev,
+                              items: data.items,
+                              pagination: data.pagination,
+                              loc: toLocation,
+                            }));
+                            load();
+                          }}
+                        >
+                          Move
+                        </Button>
+                        {user?.role === "Admin" && (
+                          <Button
+                            variant="link"
+                            className="text-red-600 p-0 h-auto"
                             onClick={async () => {
-                              if (username === "Sales") return; 
-                              const toLocation = it.location === "Bandung" ? "Jakarta" : "Bandung";
-                              await fetch("/api/inventory/move", { 
-                                method: "POST", 
-                                headers: { "Content-Type": "application/json" }, 
-                                body: JSON.stringify({ barcode: it.barcode, toLocation }) 
-                              });
+                              await fetch(`/api/inventory/item?barcode=${encodeURIComponent(it.barcode)}`, { method: "DELETE" });
                               const data = await loadInventoryList(
-                                detailModal.productKey || "", 
-                                toLocation, 
-                                detailModal.search, 
-                                detailModal.status, 
-                                detailModal.page
+                                detailModal.productKey || "",
+                                detailModal.loc || "",
+                                detailModal.search,
+                                detailModal.status,
+                                detailModal.page,
                               );
-                              setDetailModal(prev => ({ 
-                                ...prev, 
-                                items: data.items, 
+                              setDetailModal((prev) => ({
+                                ...prev,
+                                items: data.items,
                                 pagination: data.pagination,
-                                loc: toLocation
                               }));
                               load();
                             }}
                           >
-                            Move
-                          </button>
-                          {(username === "Admin") && (
-                            <button 
-                              className="text-red-600 hover:text-red-800 text-sm font-medium" 
-                              onClick={async () => {
-                                await fetch(`/api/inventory/item?barcode=${encodeURIComponent(it.barcode)}`, { method: "DELETE" });
-                                const data = await loadInventoryList(
-                                  detailModal.productKey || "", 
-                                  detailModal.loc || "", 
-                                  detailModal.search, 
-                                  detailModal.status, 
-                                  detailModal.page
-                                );
-                                setDetailModal(prev => ({ 
-                                  ...prev, 
-                                  items: data.items, 
-                                  pagination: data.pagination
-                                }));
-                                load();
-                              }}
-                            >
-                              Delete
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Pagination Controls */}
-            {detailModal.pagination && detailModal.pagination.totalPages > 1 && (
-              <div className="flex items-center justify-between">
-                <div className="text-sm text-gray-600">
-                  Showing {((detailModal.page - 1) * 10) + 1} to {Math.min(detailModal.page * 10, detailModal.pagination.totalCount)} of {detailModal.pagination.totalCount} results
-                </div>
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={!detailModal.pagination.hasPrev}
-                    onClick={async () => {
-                      const newPage = detailModal.page - 1;
-                      const data = await loadInventoryList(
-                        detailModal.productKey || "", 
-                        detailModal.loc || "", 
-                        detailModal.search, 
-                        detailModal.status, 
-                        newPage
-                      );
-                      setDetailModal(prev => ({ 
-                        ...prev, 
-                        items: data.items, 
-                        pagination: data.pagination,
-                        page: newPage
-                      }));
-                    }}
-                  >
-                    Previous
-                  </Button>
-                  <div className="flex items-center gap-1">
-                    <span className="text-sm">Page</span>
-                    <span className="text-sm font-medium">{detailModal.page}</span>
-                    <span className="text-sm">of</span>
-                    <span className="text-sm font-medium">{detailModal.pagination.totalPages}</span>
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={!detailModal.pagination.hasNext}
-                    onClick={async () => {
-                      const newPage = detailModal.page + 1;
-                      const data = await loadInventoryList(
-                        detailModal.productKey || "", 
-                        detailModal.loc || "", 
-                        detailModal.search, 
-                        detailModal.status, 
-                        newPage
-                      );
-                      setDetailModal(prev => ({ 
-                        ...prev, 
-                        items: data.items, 
-                        pagination: data.pagination,
-                        page: newPage
-                      }));
-                    }}
-                  >
-                    Next
-                  </Button>
-                </div>
-              </div>
-            )}
+                            Delete
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           </div>
-        </div>
-      )}
+
+          {/* Pagination Controls */}
+          {detailModal.pagination && detailModal.pagination.totalPages > 1 && (
+            <div className="flex items-center justify-between">
+              <div className="text-sm text-gray-600">
+                Showing {((detailModal.page - 1) * 10) + 1} to {Math.min(detailModal.page * 10, detailModal.pagination.totalCount)} of {detailModal.pagination.totalCount} results
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={!detailModal.pagination.hasPrev}
+                  onClick={async () => {
+                    const newPage = detailModal.page - 1;
+                    const data = await loadInventoryList(
+                      detailModal.productKey || "",
+                      detailModal.loc || "",
+                      detailModal.search,
+                      detailModal.status,
+                      newPage,
+                    );
+                    setDetailModal((prev) => ({
+                      ...prev,
+                      items: data.items,
+                      pagination: data.pagination,
+                      page: newPage,
+                    }));
+                  }}
+                >
+                  Previous
+                </Button>
+                <div className="flex items-center gap-1">
+                  <span className="text-sm">Page</span>
+                  <span className="text-sm font-medium">{detailModal.page}</span>
+                  <span className="text-sm">of</span>
+                  <span className="text-sm font-medium">{detailModal.pagination.totalPages}</span>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={!detailModal.pagination.hasNext}
+                  onClick={async () => {
+                    const newPage = detailModal.page + 1;
+                    const data = await loadInventoryList(
+                      detailModal.productKey || "",
+                      detailModal.loc || "",
+                      detailModal.search,
+                      detailModal.status,
+                      newPage,
+                    );
+                    setDetailModal((prev) => ({
+                      ...prev,
+                      items: data.items,
+                      pagination: data.pagination,
+                      page: newPage,
+                    }));
+                  }}
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </main>
   );
 }
-
-

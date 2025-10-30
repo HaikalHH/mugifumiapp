@@ -1,0 +1,220 @@
+"use client";
+import { useEffect, useMemo, useState } from "react";
+import { useAuth, lockedLocation } from "../providers";
+import Link from "next/link";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui/table";
+
+type StockInfo = { total: number; reserved: number; available: number };
+
+export default function DashboardPage() {
+  const { user } = useAuth();
+  const [pendingOrders, setPendingOrders] = useState<any[]>([]);
+  const [negatives, setNegatives] = useState<Array<{ key: string; available: number; loc: string }>>([]);
+  const [alerts, setAlerts] = useState<Array<{ id: number; customer?: string; outlet?: string; status?: string; actPayout?: number }>>([]);
+  const [net, setNet] = useState<number | null>(null);
+
+  const monthStr = useMemo(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    const role = user.role;
+    const locLock = lockedLocation(user);
+
+    const tasks: Promise<any>[] = [];
+    // For Jakarta/Bandung dashboard: pending orders + negative stock (locked region)
+    if (role === "Bandung" || role === "Jakarta") {
+      const params = new URLSearchParams({ page: "1", pageSize: "10" });
+      if (locLock) params.set("location", locLock);
+      tasks.push(
+        fetch(`/api/orders/pending?${params.toString()}`).then((r) => r.json()).then((d) => setPendingOrders(d.rows || [])).catch(() => setPendingOrders([]))
+      );
+      tasks.push(
+        fetch(`/api/inventory/overview`).then((r) => r.json()).then((d) => {
+          const list: Array<{ key: string; available: number; loc: string }> = [];
+          if (d?.byLocation) {
+            Object.entries(d.byLocation as Record<string, Record<string, StockInfo>>).forEach(([loc, rows]) => {
+              if (!locLock || locLock === loc) {
+                Object.entries(rows).forEach(([k, v]) => { if (v.available < 0) list.push({ key: k, available: v.available, loc }); });
+              }
+            });
+          }
+          setNegatives(list);
+        }).catch(() => setNegatives([]))
+      );
+    }
+
+    // For Baker: inventory minus across ALL locations (no region lock)
+    if (role === "Baker") {
+      tasks.push(
+        fetch(`/api/inventory/overview`).then((r) => r.json()).then((d) => {
+          const list: Array<{ key: string; available: number; loc: string }> = [];
+          if (d?.byLocation) {
+            Object.entries(d.byLocation as Record<string, Record<string, StockInfo>>).forEach(([loc, rows]) => {
+              Object.entries(rows).forEach(([k, v]) => { if (v.available < 0) list.push({ key: k, available: v.available, loc }); });
+            });
+          }
+          setNegatives(list);
+        }).catch(() => setNegatives([]))
+      );
+    }
+
+    // For Sales dashboard: orders with NOT PAID or missing actPayout
+    if (role === "Sales") {
+      const params = new URLSearchParams({ page: "1", pageSize: "20" });
+      tasks.push(
+        fetch(`/api/orders?${params.toString()}`).then((r) => r.json()).then((d) => {
+          const items = (d.rows || []).filter((o: any) => String(o.status).toUpperCase() === "NOT PAID" || (o.outlet && (o.outlet === "Tokopedia" || o.outlet === "Shopee" || o.outlet === "Wholesale" || o.outlet === "Complain") && (!o.actPayout || Number(o.actPayout) === 0)));
+          setAlerts(items);
+        }).catch(() => setAlerts([]))
+      );
+    }
+
+    // For Sales/Jakarta/Bandung: show net salary for this month
+    if (role === "Sales" || role === "Bandung" || role === "Jakarta" || role === "Baker") {
+      tasks.push(
+        fetch(`/api/payroll/summary?month=${monthStr}`).then((r) => r.json()).then((d) => {
+          const me = (d.users || []).find((x: any) => x.user?.id === user.id);
+          setNet(me ? me.netSalary : null);
+        }).catch(() => setNet(null))
+      );
+    }
+
+    Promise.all(tasks);
+  }, [user, monthStr]);
+
+  if (!user) return null;
+
+  return (
+    <div className="space-y-6">
+      <h1 className="text-2xl font-semibold">Dashboard</h1>
+
+      {(user.role === "Bandung" || user.role === "Jakarta") && (
+        <div className="space-y-4">
+          <section>
+            <div className="font-medium mb-2">Delivery Pending</div>
+            {pendingOrders.length === 0 ? (
+              <div className="text-sm text-gray-600">Tidak ada pending delivery.</div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>ID</TableHead>
+                    <TableHead>Outlet</TableHead>
+                    <TableHead>Customer</TableHead>
+                    <TableHead>Location</TableHead>
+                    <TableHead className="text-right">Action</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {pendingOrders.map((o) => (
+                    <TableRow key={o.id}>
+                      <TableCell>{o.id}</TableCell>
+                      <TableCell>{o.outlet}</TableCell>
+                      <TableCell>{o.customer || '-'}</TableCell>
+                      <TableCell>{o.location}</TableCell>
+                      <TableCell className="text-right text-sm"><Link href="/delivery" className="underline">Process</Link></TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </section>
+
+          <section>
+            <div className="font-medium mb-2">Inventory Minus</div>
+            {negatives.length === 0 ? (
+              <div className="text-sm text-gray-600">Tidak ada stok minus.</div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Lokasi</TableHead>
+                    <TableHead>Menu</TableHead>
+                    <TableHead className="text-right">Available</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {negatives.map((n, idx) => (
+                    <TableRow key={`${n.loc}-${n.key}-${idx}`}>
+                      <TableCell>{n.loc}</TableCell>
+                      <TableCell>{n.key}</TableCell>
+                      <TableCell className="text-right text-red-600">{n.available}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </section>
+        </div>
+      )}
+
+      {user.role === "Baker" && (
+        <section>
+          <div className="font-medium mb-2">Inventory Minus (All Locations)</div>
+          {negatives.length === 0 ? (
+            <div className="text-sm text-gray-600">Tidak ada stok minus.</div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Lokasi</TableHead>
+                  <TableHead>Menu</TableHead>
+                  <TableHead className="text-right">Available</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {negatives.map((n, idx) => (
+                  <TableRow key={`${n.loc}-${n.key}-${idx}`}>
+                    <TableCell>{n.loc}</TableCell>
+                    <TableCell>{n.key}</TableCell>
+                    <TableCell className="text-right text-red-600">{n.available}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </section>
+      )}
+
+      {user.role === "Sales" && (
+        <section>
+          <div className="font-medium mb-2">Orders Perlu Tindakan</div>
+          {alerts.length === 0 ? (
+            <div className="text-sm text-gray-600">Tidak ada order bermasalah.</div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>ID</TableHead>
+                  <TableHead>Outlet</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Actual</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {alerts.map((o) => (
+                  <TableRow key={o.id}>
+                    <TableCell>{o.id}</TableCell>
+                    <TableCell>{o.outlet}</TableCell>
+                    <TableCell>{o.status}</TableCell>
+                    <TableCell className="text-right">{o.actPayout ? `Rp ${Number(o.actPayout).toLocaleString('id-ID')}` : '-'}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </section>
+      )}
+
+      {(user.role === "Sales" || user.role === "Bandung" || user.role === "Jakarta" || user.role === "Baker") && (
+        <section>
+          <div className="font-medium mb-1">Estimasi Gaji Bulan Ini</div>
+          <div className="text-2xl font-semibold">Rp {net != null ? net.toLocaleString('id-ID') : 0}</div>
+        </section>
+      )}
+    </div>
+  );
+}

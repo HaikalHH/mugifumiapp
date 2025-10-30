@@ -12,37 +12,40 @@ type ActualEntryInput = {
 type ActualRequestBody = {
   period: {
     id?: number;
-    name: string;
-    month: number;
-    year: number;
-    startDate: string;
-    endDate: string;
+    weekId: number;
+    name?: string;
   };
   entries: ActualEntryInput[];
 };
 
-function parseISODate(value: string, label: string): Date {
-  const d = new Date(value);
-  if (isNaN(d.getTime())) {
-    throw new Error(`${label} is invalid date`);
-  }
-  return d;
+function mapWeek(
+  week: { id: number; name: string; month: number; year: number; startDate: Date; endDate: Date } | null,
+) {
+  if (!week) return null;
+  return {
+    id: week.id,
+    name: week.name,
+    month: week.month,
+    year: week.year,
+    startDate: week.startDate.toISOString(),
+    endDate: week.endDate.toISOString(),
+  };
 }
 
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const periodIdRaw = searchParams.get("periodId");
-    const monthRaw = searchParams.get("month");
-    const yearRaw = searchParams.get("year");
+    const weekIdRaw = searchParams.get("weekId");
 
-    logRouteStart("finance-actual-get", { periodIdRaw, monthRaw, yearRaw });
+    logRouteStart("finance-actual-get", { periodIdRaw, weekIdRaw });
 
-    if (!periodIdRaw && !(monthRaw && yearRaw)) {
+    if (!periodIdRaw && !weekIdRaw) {
       const periods = await withRetry(async () => {
         const rows = await prisma.financePeriod.findMany({
           orderBy: { startDate: "desc" },
           include: {
+            week: true,
             actuals: {
               select: { amount: true },
             },
@@ -50,12 +53,14 @@ export async function GET(req: NextRequest) {
         });
         return rows.map((row) => ({
           id: row.id,
-          name: row.name,
-          month: row.month,
-          year: row.year,
+          name: row.name || row.week?.name || `Periode ${row.id}`,
+          month: row.week?.month ?? row.startDate.getMonth() + 1,
+          year: row.week?.year ?? row.startDate.getFullYear(),
           totalActual: row.actuals.reduce((sum, entry) => sum + entry.amount, 0),
-          startDate: row.startDate.toISOString(),
-          endDate: row.endDate.toISOString(),
+          startDate: (row.week?.startDate ?? row.startDate).toISOString(),
+          endDate: (row.week?.endDate ?? row.endDate).toISOString(),
+          weekId: row.weekId,
+          week: mapWeek(row.week ?? null),
         }));
       }, 2, "finance-actual-list");
 
@@ -70,21 +75,26 @@ export async function GET(req: NextRequest) {
         return prisma.financePeriod.findUnique({
           where: { id },
           include: {
+            week: true,
             actuals: { orderBy: { category: "asc" } },
           },
         });
       }
-      const month = Number(monthRaw);
-      const year = Number(yearRaw);
-      if (Number.isNaN(month) || Number.isNaN(year)) {
-        throw new Error("month and year must be numbers");
+      if (weekIdRaw) {
+        const weekId = Number(weekIdRaw);
+        if (Number.isNaN(weekId)) {
+          throw new Error("weekId must be a number");
+        }
+        return prisma.financePeriod.findFirst({
+          where: { weekId },
+          orderBy: { updatedAt: "desc" },
+          include: {
+            week: true,
+            actuals: { orderBy: { category: "asc" } },
+          },
+        });
       }
-      return prisma.financePeriod.findUnique({
-        where: { month_year: { month, year } },
-        include: {
-          actuals: { orderBy: { category: "asc" } },
-        },
-      });
+      return null;
     }, 2, "finance-actual-get-period");
 
     if (!period) {
@@ -92,14 +102,17 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ period: null }, { status: 404 });
     }
 
+    const periodWeek = period.week ?? null;
     const payload = {
       period: {
         id: period.id,
-        name: period.name,
-        month: period.month,
-        year: period.year,
-        startDate: period.startDate.toISOString(),
-        endDate: period.endDate.toISOString(),
+        name: period.name || periodWeek?.name || `Periode ${period.id}`,
+        month: periodWeek?.month ?? period.startDate.getMonth() + 1,
+        year: periodWeek?.year ?? period.startDate.getFullYear(),
+        startDate: (periodWeek?.startDate ?? period.startDate).toISOString(),
+        endDate: (periodWeek?.endDate ?? period.endDate).toISOString(),
+        weekId: period.weekId ?? null,
+        week: mapWeek(periodWeek),
         createdAt: period.createdAt.toISOString(),
         updatedAt: period.updatedAt.toISOString(),
       },
@@ -136,17 +149,20 @@ export async function POST(req: NextRequest) {
     }
 
     const { period: periodPayload, entries } = body;
-    if (!periodPayload.name?.trim()) {
-      return NextResponse.json({ error: "period.name is required" }, { status: 400 });
-    }
-    if (typeof periodPayload.month !== "number" || typeof periodPayload.year !== "number") {
-      return NextResponse.json({ error: "period.month and period.year must be numbers" }, { status: 400 });
+    if (typeof periodPayload.weekId !== "number" || Number.isNaN(periodPayload.weekId)) {
+      return NextResponse.json({ error: "period.weekId must be provided" }, { status: 400 });
     }
 
-    const startDate = parseISODate(periodPayload.startDate, "period.startDate");
-    const endDate = parseISODate(periodPayload.endDate, "period.endDate");
-    if (endDate < startDate) {
-      return NextResponse.json({ error: "period.endDate must be after startDate" }, { status: 400 });
+    const week = await prisma.financeWeek.findUnique({
+      where: { id: periodPayload.weekId },
+    });
+    if (!week) {
+      return NextResponse.json({ error: "Finance week not found" }, { status: 404 });
+    }
+
+    const periodName = periodPayload.name?.trim() || week.name;
+    if (!periodName) {
+      return NextResponse.json({ error: "period.name is required" }, { status: 400 });
     }
 
     const sanitizedEntries: ActualEntryInput[] = entries.map((entry) => {
@@ -167,46 +183,63 @@ export async function POST(req: NextRequest) {
       };
     });
 
+    const weekStart = new Date(week.startDate);
+    const weekEnd = new Date(week.endDate);
+
     const result = await withRetry(async () => {
       return prisma.$transaction(async (tx) => {
-        let period;
+        let periodRecord;
         if (periodPayload.id) {
-          period = await tx.financePeriod.update({
+          periodRecord = await tx.financePeriod.update({
             where: { id: periodPayload.id },
             data: {
-              name: periodPayload.name,
-              month: periodPayload.month,
-              year: periodPayload.year,
-              startDate,
-              endDate,
+              name: periodName,
+              month: weekStart.getMonth() + 1,
+              year: weekStart.getFullYear(),
+              startDate: weekStart,
+              endDate: weekEnd,
+              weekId: week.id,
             },
           });
         } else {
-          period = await tx.financePeriod.upsert({
-            where: { month_year: { month: periodPayload.month, year: periodPayload.year } },
-            update: {
-              name: periodPayload.name,
-              startDate,
-              endDate,
-            },
-            create: {
-              name: periodPayload.name,
-              month: periodPayload.month,
-              year: periodPayload.year,
-              startDate,
-              endDate,
-            },
+          const existing = await tx.financePeriod.findFirst({
+            where: { weekId: week.id },
+            orderBy: { updatedAt: "desc" },
           });
+          if (existing) {
+            periodRecord = await tx.financePeriod.update({
+              where: { id: existing.id },
+              data: {
+                name: periodName,
+                month: weekStart.getMonth() + 1,
+                year: weekStart.getFullYear(),
+                startDate: weekStart,
+                endDate: weekEnd,
+                weekId: week.id,
+              },
+            });
+          } else {
+            periodRecord = await tx.financePeriod.create({
+              data: {
+                name: periodName,
+                month: weekStart.getMonth() + 1,
+                year: weekStart.getFullYear(),
+                startDate: weekStart,
+                endDate: weekEnd,
+                weekId: week.id,
+              },
+            });
+          }
         }
 
         await tx.financeActualEntry.deleteMany({
-          where: { periodId: period.id },
+          where: { periodId: periodRecord.id },
         });
 
         if (sanitizedEntries.length > 0) {
           await tx.financeActualEntry.createMany({
             data: sanitizedEntries.map((entry) => ({
-              periodId: period.id,
+              periodId: periodRecord.id,
               category: entry.category,
               amount: entry.amount,
               data: entry.data ?? null,
@@ -214,26 +247,34 @@ export async function POST(req: NextRequest) {
           });
         }
 
-        const createdEntries = await tx.financeActualEntry.findMany({
-          where: { periodId: period.id },
+        const actualEntries = await tx.financeActualEntry.findMany({
+          where: { periodId: periodRecord.id },
           orderBy: { category: "asc" },
         });
 
+        const periodWithRelations = await tx.financePeriod.findUnique({
+          where: { id: periodRecord.id },
+          include: { week: true },
+        });
+
         return {
-          period,
-          actualEntries: createdEntries,
+          period: periodWithRelations!,
+          actualEntries,
         };
       });
     }, 2, "finance-actual-upsert");
 
+    const weekInfo = result.period.week ?? null;
     const payload = {
       period: {
         id: result.period.id,
-        name: result.period.name,
-        month: result.period.month,
-        year: result.period.year,
-        startDate: result.period.startDate.toISOString(),
-        endDate: result.period.endDate.toISOString(),
+        name: result.period.name || weekInfo?.name || `Periode ${result.period.id}`,
+        month: weekInfo?.month ?? result.period.startDate.getMonth() + 1,
+        year: weekInfo?.year ?? result.period.startDate.getFullYear(),
+        startDate: (weekInfo?.startDate ?? result.period.startDate).toISOString(),
+        endDate: (weekInfo?.endDate ?? result.period.endDate).toISOString(),
+        weekId: result.period.weekId ?? null,
+        week: mapWeek(weekInfo),
         createdAt: result.period.createdAt.toISOString(),
         updatedAt: result.period.updatedAt.toISOString(),
       },

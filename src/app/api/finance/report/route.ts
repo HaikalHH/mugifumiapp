@@ -16,6 +16,15 @@ type PeriodReport = {
   year: number;
   startDate: string;
   endDate: string;
+  weekId: number | null;
+  week: {
+    id: number;
+    name: string;
+    month: number;
+    year: number;
+    startDate: string;
+    endDate: string;
+  } | null;
   actualRevenue: number;
   plan: {
     total: number;
@@ -34,8 +43,23 @@ function normalizeAmount(value: number | null | undefined): number {
   return value;
 }
 
+function mapWeek(
+  week: { id: number; name: string; month: number; year: number; startDate: Date; endDate: Date } | null,
+) {
+  if (!week) return null;
+  return {
+    id: week.id,
+    name: week.name,
+    month: week.month,
+    year: week.year,
+    startDate: week.startDate.toISOString(),
+    endDate: week.endDate.toISOString(),
+  };
+}
+
 async function computeActualRevenue(startDate: Date, endDate: Date) {
-  const sales = await prisma.sale.findMany({
+  // Use orders as the single source of truth (consistent with finance metrics and sales reports)
+  const orders = await prisma.order.findMany({
     where: {
       orderDate: {
         gte: startDate,
@@ -43,20 +67,52 @@ async function computeActualRevenue(startDate: Date, endDate: Date) {
       },
     },
     select: {
+      outlet: true,
+      status: true,
       actPayout: true,
-      actualReceived: true,
-      items: {
-        select: { price: true },
-      },
+      totalAmount: true,
+      items: { select: { price: true, quantity: true } },
+      deliveries: { select: { ongkirPlan: true, ongkirActual: true, status: true } },
     },
   });
 
-  return sales.reduce((sum, sale) => {
-    const fromAct = normalizeAmount(sale.actPayout ?? null);
-    const fromActualReceived = normalizeAmount(sale.actualReceived ?? null);
-    const fromItems = sale.items.reduce((s, item) => s + normalizeAmount(item.price), 0);
-    return sum + (fromAct || fromActualReceived || fromItems);
-  }, 0);
+  let total = 0;
+  for (const order of orders) {
+    const outletLower = order.outlet.toLowerCase();
+    const isFree = outletLower === "free";
+    const isCafe = outletLower === "cafe";
+    const isWhatsApp = outletLower === "whatsapp";
+
+    // Pre-discount subtotal in case totalAmount is missing
+    const preDiscountSubtotal = order.items.reduce((sum, item) => sum + (item.price * (item.quantity || 0)), 0);
+    const totalAmount = order.totalAmount || preDiscountSubtotal;
+
+    // Calculate ongkir difference for WhatsApp
+    let ongkirDifference = 0;
+    if (isWhatsApp && order.deliveries && order.deliveries.length > 0) {
+      for (const delivery of order.deliveries) {
+        if (delivery.ongkirPlan && delivery.ongkirActual && delivery.status === "delivered") {
+          const diff = delivery.ongkirActual - delivery.ongkirPlan;
+          if (diff > 0) {
+            ongkirDifference += diff;
+          }
+        }
+      }
+    }
+
+    // Actual revenue per order mirrors logic in finance metrics/report sales
+    const actual = isFree
+      ? 0
+      : (isCafe
+        ? (order.actPayout ?? 0)
+        : (isWhatsApp
+          ? ((order.actPayout || totalAmount || 0) - ongkirDifference)
+          : (order.actPayout || totalAmount || 0)));
+
+    total += normalizeAmount(actual);
+  }
+
+  return total;
 }
 
 function summarizeEntries(entries: Array<{ category: FinanceCategory; amount: number; data: any }>): { total: number; byCategory: CategorySummary[] } {
@@ -90,21 +146,23 @@ export async function GET(req: NextRequest) {
     const periods = await withRetry(async () => {
       return prisma.financePeriod.findMany({
         where: yearFilter === null ? undefined : { year: yearFilter },
-        orderBy: [
-          { year: "desc" },
-          { month: "desc" },
-        ],
+        orderBy: [{ startDate: "desc" }],
         include: {
           plans: true,
           actuals: true,
+          week: true,
         },
       });
     }, 2, "finance-report-periods");
 
     const reports: PeriodReport[] = [];
     for (const period of periods) {
+      const weekStart = period.week?.startDate ?? period.startDate;
+      const weekEnd = period.week?.endDate ?? period.endDate;
+      const weekInfo = period.week ?? null;
+
       const actualRevenue = await withRetry(
-        () => computeActualRevenue(period.startDate, period.endDate),
+        () => computeActualRevenue(weekStart, weekEnd),
         2,
         `finance-report-actual-revenue-${period.id}`,
       );
@@ -122,11 +180,13 @@ export async function GET(req: NextRequest) {
 
       reports.push({
         periodId: period.id,
-        name: period.name,
-        month: period.month,
-        year: period.year,
-        startDate: period.startDate.toISOString(),
-        endDate: period.endDate.toISOString(),
+        name: period.name || weekInfo?.name || `Periode ${period.id}`,
+        month: weekInfo?.month ?? weekStart.getMonth() + 1,
+        year: weekInfo?.year ?? weekStart.getFullYear(),
+        startDate: weekStart.toISOString(),
+        endDate: weekEnd.toISOString(),
+        weekId: period.weekId ?? null,
+        week: mapWeek(weekInfo),
         actualRevenue,
         plan: planSummary,
         actual: actualSummary,

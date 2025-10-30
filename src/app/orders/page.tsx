@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
@@ -51,6 +51,10 @@ type OrderStatus = "PAID" | "NOT PAID";
 const ORDER_STATUS_OPTIONS: OrderStatus[] = ["PAID", "NOT PAID"];
 const DEFAULT_ORDER_STATUS: OrderStatus = "PAID";
 
+function outletHasActPayout(outlet: string): boolean {
+  return ["Tokopedia", "Shopee", "Cafe", "Wholesale", "Complain"].includes(outlet);
+}
+
 function normalizeOrderStatus(status?: string | null): OrderStatus {
   if (!status) return "PAID";
   const normalized = status.trim().toUpperCase().replace(/\s+/g, " ");
@@ -63,15 +67,18 @@ function getStatusBadgeColor(status: OrderStatus) {
 
 function getInitialLocation(): string {
   if (typeof window !== "undefined") {
-    const u = localStorage.getItem("mf_username");
-    const locked = lockedLocation((u as any) || null);
-    if (locked) return locked;
+    const raw = localStorage.getItem("mf_user");
+    try {
+      const parsed = raw ? JSON.parse(raw) : null;
+      const locked = lockedLocation(parsed);
+      if (locked) return locked;
+    } catch {}
   }
   return "Bandung";
 }
 
 export default function OrdersPage() {
-  const { username } = useAuth();
+  const { user } = useAuth();
   const [orders, setOrders] = useState<Order[]>([]);
   const [outlet, setOutlet] = useState("WhatsApp");
   const [location, setLocation] = useState<string>(() => getInitialLocation());
@@ -111,8 +118,9 @@ export default function OrdersPage() {
   const [total, setTotal] = useState(0);
   const [from, setFrom] = useState<Date | undefined>(undefined);
   const [to, setTo] = useState<Date | undefined>(undefined);
+  const [search, setSearch] = useState("");
 
-  const loadOrders = async () => {
+  const loadOrders = useCallback(async () => {
     const params = new URLSearchParams({ page: String(page), pageSize: "10" });
     if (from) {
       const fromJakarta = getStartOfDayJakarta(from);
@@ -122,11 +130,14 @@ export default function OrdersPage() {
       const toJakarta = getEndOfDayJakarta(to);
       params.set("to", toJakarta.toISOString());
     }
+    if (search.trim()) {
+      params.set("search", search.trim());
+    }
     const res = await fetch(`/api/orders?${params.toString()}`);
     const data = await res.json();
     setOrders(data.rows || []);
     setTotal(data.total || 0);
-  };
+  }, [page, from, to, search]);
 
   const loadProducts = async () => {
     try {
@@ -142,14 +153,14 @@ export default function OrdersPage() {
     }
   };
 
-  useEffect(() => { loadOrders(); }, [page, from, to]);
+  useEffect(() => { loadOrders(); }, [loadOrders]);
   useEffect(() => { loadProducts(); }, []);
 
   // lock location for Bandung/Jakarta
   useEffect(() => {
-    const locked = lockedLocation(username);
+    const locked = lockedLocation(user);
     if (locked) setLocation(locked);
-  }, [username]);
+  }, [user]);
 
   const openModal = () => {
     setEditingOrderId(null); // Reset editing state
@@ -302,14 +313,28 @@ export default function OrdersPage() {
     // Convert order date to UTC for Jakarta timezone
     const orderDateUTC = toUTCForJakarta(form.orderDate);
 
-    const payload: any = {
-      outlet: editingOrderId ? editingOutlet : outlet,
-      location: editingOrderId ? editingLocation : location,
+    const currentOutlet = editingOrderId ? editingOutlet : outlet;
+    const currentLocation = editingOrderId ? editingLocation : location;
+
+    type OrderUpsertPayload = {
+      outlet: string;
+      location: string;
+      customer: string;
+      status: OrderStatus;
+      orderDate: string; // ISO in UTC
+      discount: number | null;
+      actPayout: number | null;
+      items: Array<{ productId: number; quantity: number }>;
+    };
+
+    const payload: OrderUpsertPayload = {
+      outlet: currentOutlet,
+      location: currentLocation,
       customer: form.customer,
       status: form.status,
       orderDate: orderDateUTC.toISOString(),
       discount: form.discount ? Number(form.discount) : null,
-      actPayout: ((editingOrderId ? editingOutlet : outlet) === "Tokopedia" || (editingOrderId ? editingOutlet : outlet) === "Shopee" || (editingOrderId ? editingOutlet : outlet) === "Cafe" || (editingOrderId ? editingOutlet : outlet) === "Wholesale" || (editingOrderId ? editingOutlet : outlet) === "Complain") && form.actPayout ? Number(form.actPayout) : null,
+      actPayout: outletHasActPayout(currentOutlet) && form.actPayout ? Number(form.actPayout) : null,
       items: selectedItems.map(item => ({
         productId: item.productId,
         quantity: item.quantity
@@ -330,8 +355,8 @@ export default function OrdersPage() {
       // Send WhatsApp notification only on create (not on edit)
       if (!editingOrderId) {
         try {
-          const orderOutlet = editingOrderId ? editingOutlet : outlet;
-          const orderLocation = editingOrderId ? editingLocation : location;
+          const orderOutlet = currentOutlet;
+          const orderLocation = currentLocation;
           const orderCustomer = form.customer || "-";
           const orderTotal = calculateTotal();
           const orderItems = selectedItems.map((it) => {
@@ -390,7 +415,7 @@ export default function OrdersPage() {
   const editingOrder = editingOrderId ? orders.find(o => o.id === editingOrderId) : null;
   const isEditingDelivered = Boolean(editingOrder?.deliveries && editingOrder.deliveries.length > 0);
 
-  if (username === "Bandung" || username === "Jakarta") {
+  if (user?.role === "Bandung" || user?.role === "Jakarta") {
     return (
       <main className="p-6">
         <div className="text-sm text-gray-600">Akses ditolak.</div>
@@ -401,7 +426,7 @@ export default function OrdersPage() {
   return (
     <main className="p-6 space-y-6">
       <h1 className="text-xl font-semibold">Orders</h1>
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
         <div className="flex flex-col gap-1">
           <Label>Outlet</Label>
           <Select value={outlet} onValueChange={setOutlet}>
@@ -421,7 +446,7 @@ export default function OrdersPage() {
         </div>
         <div className="flex flex-col gap-1">
           <Label>Location</Label>
-          <Select value={location} onValueChange={(v) => setLocation(v)} disabled={Boolean(lockedLocation(username))}>
+          <Select value={location} onValueChange={(v) => setLocation(v)} disabled={Boolean(lockedLocation(user))}>
             <SelectTrigger>
               <SelectValue placeholder="Pilih Lokasi" />
             </SelectTrigger>
@@ -430,6 +455,14 @@ export default function OrdersPage() {
               <SelectItem value="Jakarta">Jakarta</SelectItem>
             </SelectContent>
           </Select>
+        </div>
+        <div className="flex flex-col gap-1">
+          <Label>Search</Label>
+          <Input
+            placeholder="Search by ID, outlet, location, customer, status..."
+            value={search}
+            onChange={(e) => { setPage(1); setSearch(e.target.value); }}
+          />
         </div>
         <div className="flex flex-col gap-1">
           <Label>Periode From</Label>
@@ -453,6 +486,7 @@ export default function OrdersPage() {
         <Button variant="outline" onClick={() => {
           setFrom(undefined);
           setTo(undefined);
+          setSearch("");
           setPage(1);
         }}>
           Clear Filters
@@ -535,7 +569,7 @@ export default function OrdersPage() {
               <Label>Discount %</Label>
               <Input type="number" placeholder="e.g. 10" value={form.discount} onChange={(e) => setForm({ ...form, discount: e.target.value })} />
             </div>
-            {((editingOrderId ? editingOutlet : outlet) === "Tokopedia" || (editingOrderId ? editingOutlet : outlet) === "Shopee" || (editingOrderId ? editingOutlet : outlet) === "Cafe" || (editingOrderId ? editingOutlet : outlet) === "Wholesale" || (editingOrderId ? editingOutlet : outlet) === "Complain") && (
+            {outletHasActPayout(editingOrderId ? editingOutlet : outlet) && (
               <>
                 <div className="flex flex-col gap-1">
                   <Label>Estimasi Total (Rp)</Label>
@@ -709,7 +743,7 @@ export default function OrdersPage() {
                 <TableCell>
                   <div className="flex items-center gap-2">
                     <span>{order.outlet}</span>
-                    {(order.outlet === "Tokopedia" || order.outlet === "Shopee" || order.outlet === "Cafe" || order.outlet === "Wholesale" || order.outlet === "Complain") && (
+                    {outletHasActPayout(order.outlet) && (
                       <Badge color={order.actPayout && Number(order.actPayout) > 0 ? "green" : "red"}>
                         {order.actPayout && Number(order.actPayout) > 0 
                           ? `Rp ${Number(order.actPayout).toLocaleString("id-ID")}` 
@@ -756,7 +790,7 @@ export default function OrdersPage() {
                     >
                       Edit
                     </Button>
-                    {username === "Admin" && (
+                    {user?.role === "Admin" && (
                       <Button 
                         variant="link" 
                         className="text-red-600 p-0 h-auto"

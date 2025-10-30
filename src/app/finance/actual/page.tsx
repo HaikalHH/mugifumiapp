@@ -1,11 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { FinanceCategory } from "@prisma/client";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { Label } from "../../../components/ui/label";
-import { DateTimePicker } from "../../../components/ui/date-picker";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../components/ui/table";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "../../../components/ui/dialog";
@@ -37,38 +36,34 @@ type ApiActualEntry = {
   data: any;
 };
 
-type PeriodSummary = {
-  id: number;
-  name: string;
-  month: number;
-  year: number;
-  startDate: string;
-  endDate: string;
-  totalPlan: number;
-  totalActual: number;
-  planEntryCount: number;
-  actualEntryCount: number;
-};
-
-type PlanDetailResponse = {
-  period: {
-    id: number;
-    name: string;
-    month: number;
-    year: number;
-    startDate: string;
-    endDate: string;
-  };
-  planEntries: ApiPlanEntry[];
-  actualEntries: ApiActualEntry[];
-};
-
 type ActualEntryDraft = {
   amount: number;
   data: any;
 };
 
 type ActualDraftState = Partial<Record<FinanceCategory, ActualEntryDraft>>;
+
+type WeekOption = {
+  id: number;
+  name: string;
+  month: number;
+  year: number;
+  startDate: string;
+  endDate: string;
+};
+
+type PlanDetailResponse = {
+  period: {
+    id: number;
+    name: string;
+    weekId: number | null;
+    week: WeekOption | null;
+    startDate: string;
+    endDate: string;
+  } | null;
+  planEntries: ApiPlanEntry[];
+  actualEntries: ApiActualEntry[];
+};
 
 const CATEGORY_LABELS: Record<FinanceCategory, string> = {
   BAHAN: "Bahan",
@@ -84,116 +79,250 @@ const CATEGORY_OPTIONS: Array<{ value: FinanceCategory; label: string }> = Objec
   ([value, label]) => ({ value: value as FinanceCategory, label }),
 );
 
-function startOfCurrentMonth(): Date {
-  const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth(), 1);
+const MONTH_NAMES = [
+  "Januari",
+  "Februari",
+  "Maret",
+  "April",
+  "Mei",
+  "Juni",
+  "Juli",
+  "Agustus",
+  "September",
+  "Oktober",
+  "November",
+  "Desember",
+];
+
+function monthKey(month: number, year: number): string {
+  return `${year}-${String(month).padStart(2, "0")}`;
 }
 
-function endOfCurrentMonth(): Date {
-  const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+function formatMonthLabel(month: number, year: number): string {
+  const name = MONTH_NAMES[month - 1] ?? `Bulan ${month}`;
+  return `${name} ${year}`;
 }
 
 function formatCurrency(amount: number): string {
   return `Rp ${amount.toLocaleString("id-ID")}`;
 }
 
+function formatDateRange(from?: Date, to?: Date): string {
+  if (!from || !to) return "-";
+  return `${from.toLocaleDateString("id-ID")} - ${to.toLocaleDateString("id-ID")}`;
+}
+
+function formatWeekLabel(week: WeekOption): string {
+  const start = new Date(week.startDate).toLocaleDateString("id-ID");
+  const end = new Date(week.endDate).toLocaleDateString("id-ID");
+  return `${week.name} (${start} - ${end})`;
+}
+
 export default function FinanceActualPage() {
-  const [from, setFrom] = useState<Date | undefined>(startOfCurrentMonth());
-  const [to, setTo] = useState<Date | undefined>(endOfCurrentMonth());
+  const [weeks, setWeeks] = useState<WeekOption[]>([]);
+  const [selectedMonthKey, setSelectedMonthKey] = useState("");
+  const [selectedWeekId, setSelectedWeekId] = useState("");
+  const [currentPeriodId, setCurrentPeriodId] = useState<number | null>(null);
+  const [currentPeriodName, setCurrentPeriodName] = useState("");
+  const [from, setFrom] = useState<Date | undefined>();
+  const [to, setTo] = useState<Date | undefined>();
   const [metrics, setMetrics] = useState<Metrics | null>(null);
-  const [planPeriods, setPlanPeriods] = useState<PeriodSummary[]>([]);
-  const [selectedPeriodId, setSelectedPeriodId] = useState<string>("");
-  const [periodInfo, setPeriodInfo] = useState<{ name: string; month: number; year: number }>({
-    name: "",
-    month: new Date().getMonth() + 1,
-    year: new Date().getFullYear(),
-  });
-  const [planEntries, setPlanEntries] = useState<PlanDetailResponse["planEntries"]>([]);
+  const [planEntries, setPlanEntries] = useState<ApiPlanEntry[]>([]);
   const [draftEntries, setDraftEntries] = useState<ActualDraftState>({});
   const [activeCategory, setActiveCategory] = useState<FinanceCategory | null>(null);
 
-  const loadPlanPeriods = async () => {
-    const res = await fetch("/api/finance/plan");
-    if (!res.ok) return;
+  const loadWeeks = useCallback(async () => {
+    const res = await fetch("/api/finance/weeks");
+    if (!res.ok) {
+      console.error("Failed to load finance weeks");
+      return;
+    }
     const data = await res.json();
-    const periods: PeriodSummary[] = data.periods || [];
-    setPlanPeriods(periods);
-    if (!selectedPeriodId && periods.length > 0) {
-      setSelectedPeriodId(String(periods[0].id));
-    }
-  };
+    const list: WeekOption[] = Array.isArray(data.weeks) ? data.weeks : [];
+    list.sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
+    setWeeks(list);
+  }, []);
 
-  const loadPlanDetail = async (periodId: number) => {
-    const res = await fetch(`/api/finance/plan?periodId=${periodId}`);
-    if (!res.ok) return;
-    const data = (await res.json()) as PlanDetailResponse;
-    if (data.period) {
-      setPeriodInfo({ name: data.period.name, month: data.period.month, year: data.period.year });
-      setFrom(new Date(data.period.startDate));
-      setTo(new Date(data.period.endDate));
-    }
-    setPlanEntries(data.planEntries);
-    const draft: ActualDraftState = {};
-    data.actualEntries.forEach((entry) => {
-      draft[entry.category] = { amount: entry.amount, data: entry.data };
-    });
-    setDraftEntries(draft);
-  };
+  const loadActualDetailByWeek = useCallback(async (weekId: number): Promise<number | null> => {
+    try {
+      const res = await fetch(`/api/finance/plan?weekId=${weekId}`);
+      if (res.status === 404) {
+        const week = weeks.find((item) => item.id === weekId);
+        setCurrentPeriodId(null);
+        setCurrentPeriodName(week?.name ?? "");
+        setPlanEntries([]);
+        setDraftEntries({});
+        return null;
+      }
+      if (!res.ok) {
+        console.error("Failed to load plan detail");
+        return null;
+      }
+      const data = (await res.json()) as PlanDetailResponse;
+      if (!data.period) {
+        const week = weeks.find((item) => item.id === weekId);
+        setCurrentPeriodId(null);
+        setCurrentPeriodName(week?.name ?? "");
+        setPlanEntries([]);
+        setDraftEntries({});
+        return null;
+      }
 
-  const loadMetrics = async (periodId: number | null) => {
-    if (!from || !to) return;
+      setCurrentPeriodId(data.period.id);
+      setCurrentPeriodName(data.period.name);
+
+      const periodWeek = data.period.week;
+      if (periodWeek) {
+        setWeeks((prev) => {
+          const exists = prev.some((item) => item.id === periodWeek.id);
+          if (exists) return prev;
+          const next = [...prev, periodWeek];
+          next.sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
+          return next;
+        });
+        setFrom(new Date(periodWeek.startDate));
+        setTo(new Date(periodWeek.endDate));
+      } else {
+        setFrom(new Date(data.period.startDate));
+        setTo(new Date(data.period.endDate));
+      }
+
+      setPlanEntries(data.planEntries);
+      const actualDraft: ActualDraftState = {};
+      data.actualEntries.forEach((entry) => {
+        actualDraft[entry.category] = { amount: entry.amount, data: entry.data };
+      });
+      setDraftEntries(actualDraft);
+
+      return data.period.id;
+    } catch (error) {
+      console.error("Failed to load plan detail", error);
+      return null;
+    }
+  }, [weeks]);
+
+  const loadMetricsData = useCallback(async (periodId: number | null, weekId: number) => {
     const query = new URLSearchParams();
-    query.set("from", from.toISOString());
-    query.set("to", to.toISOString());
-    if (periodId) query.set("periodId", String(periodId));
+    query.set("weekId", String(weekId));
+    if (periodId) {
+      query.set("periodId", String(periodId));
+    }
     const res = await fetch(`/api/finance/metrics?${query.toString()}`);
-    if (!res.ok) return;
+    if (!res.ok) {
+      console.error("Failed to load finance metrics");
+      return;
+    }
     const data = (await res.json()) as Metrics;
     setMetrics(data);
-    if (periodId) {
-      const draft: ActualDraftState = {};
-      data.actualEntries?.forEach((entry) => {
-        draft[entry.category] = { amount: entry.amount, data: entry.data };
-      });
-      setDraftEntries((prev) => ({ ...prev, ...draft }));
-      if (data.planEntries) {
-        setPlanEntries(data.planEntries);
-      }
-    }
-  };
-
-  useEffect(() => {
-    loadPlanPeriods();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    if (selectedPeriodId && selectedPeriodId !== "new") {
-      const periodId = Number(selectedPeriodId);
-      if (!Number.isNaN(periodId)) {
-        loadPlanDetail(periodId);
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedPeriodId]);
+    loadWeeks();
+  }, [loadWeeks]);
 
   useEffect(() => {
-    const periodId = selectedPeriodId && selectedPeriodId !== "new" ? Number(selectedPeriodId) : null;
-    loadMetrics(periodId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [from, to, selectedPeriodId]);
+    if (weeks.length === 0) {
+      setSelectedMonthKey("");
+      setSelectedWeekId("");
+      return;
+    }
+    if (!selectedMonthKey || !weeks.some((week) => monthKey(week.month, week.year) === selectedMonthKey)) {
+      const firstWeek = weeks[0];
+      const key = monthKey(firstWeek.month, firstWeek.year);
+      setSelectedMonthKey(key);
+      setSelectedWeekId(String(firstWeek.id));
+    }
+  }, [weeks, selectedMonthKey]);
 
-  const handleCategorySubmit = (category: FinanceCategory, entry: ActualEntryDraft) => {
-    setDraftEntries((prev) => ({ ...prev, [category]: entry }));
-    setActiveCategory(null);
-  };
+  useEffect(() => {
+    if (!selectedMonthKey) {
+      setSelectedWeekId("");
+      setCurrentPeriodId(null);
+      setCurrentPeriodName("");
+      setPlanEntries([]);
+      setDraftEntries({});
+      setMetrics(null);
+      return;
+    }
+    const [yearStr, monthStr] = selectedMonthKey.split("-");
+    const month = Number(monthStr);
+    const year = Number(yearStr);
+    const availableWeeks = weeks
+      .filter((week) => week.month === month && week.year === year)
+      .sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
+    if (availableWeeks.length === 0) {
+      setSelectedWeekId("");
+      setCurrentPeriodId(null);
+      setCurrentPeriodName("");
+      setPlanEntries([]);
+      setDraftEntries({});
+      setMetrics(null);
+      return;
+    }
+    if (!availableWeeks.some((week) => String(week.id) === selectedWeekId)) {
+      setSelectedWeekId(String(availableWeeks[0].id));
+    }
+  }, [selectedMonthKey, weeks, selectedWeekId]);
+
+  useEffect(() => {
+    if (!selectedWeekId) {
+      setFrom(undefined);
+      setTo(undefined);
+      setCurrentPeriodId(null);
+      setCurrentPeriodName("");
+      setPlanEntries([]);
+      setDraftEntries({});
+      setMetrics(null);
+      return;
+    }
+    const week = weeks.find((item) => String(item.id) === selectedWeekId);
+    if (week) {
+      setFrom(new Date(week.startDate));
+      setTo(new Date(week.endDate));
+      setCurrentPeriodName((prev) => (prev ? prev : week.name));
+    }
+    const weekIdNumber = Number(selectedWeekId);
+    if (Number.isNaN(weekIdNumber)) return;
+    (async () => {
+      const periodId = await loadActualDetailByWeek(weekIdNumber);
+      await loadMetricsData(periodId, weekIdNumber);
+    })();
+  }, [selectedWeekId, weeks, loadActualDetailByWeek, loadMetricsData]);
+
+  const monthOptions = useMemo(() => {
+    const map = new Map<string, { key: string; month: number; year: number }>();
+    weeks.forEach((week) => {
+      const key = monthKey(week.month, week.year);
+      if (!map.has(key)) {
+        map.set(key, { key, month: week.month, year: week.year });
+      }
+    });
+    return Array.from(map.values()).sort((a, b) => (b.year - a.year) || (b.month - a.month));
+  }, [weeks]);
+
+  const weeksInSelectedMonth = useMemo(() => {
+    if (!selectedMonthKey) return [] as WeekOption[];
+    const [yearStr, monthStr] = selectedMonthKey.split("-");
+    const month = Number(monthStr);
+    const year = Number(yearStr);
+    return weeks
+      .filter((week) => week.month === month && week.year === year)
+      .sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
+  }, [selectedMonthKey, weeks]);
+
+  const selectedWeek = useMemo(() => {
+    return weeks.find((week) => String(week.id) === selectedWeekId) ?? null;
+  }, [weeks, selectedWeekId]);
+
+  const selectedWeekLabel = useMemo(() => {
+    return selectedWeek ? formatWeekLabel(selectedWeek) : "";
+  }, [selectedWeek]);
 
   const draftList = useMemo(() => {
     return CATEGORY_OPTIONS.filter(
       (item) => planEntries.some((plan) => plan.category === item.value) || draftEntries[item.value],
     ).map((item) => {
-      const plan = planEntries.find((p) => p.category === item.value);
+      const plan = planEntries.find((entry) => entry.category === item.value);
       const actual = draftEntries[item.value];
       return {
         category: item.value,
@@ -214,16 +343,27 @@ export default function FinanceActualPage() {
   const netProfitActual = actualRevenueTotal - totalActual;
   const pinjamModalDisplay = totalPlan > totalOmsetPaid ? totalPlan - totalOmsetPaid : 0;
 
+  const handleCategorySubmit = (category: FinanceCategory, entry: ActualEntryDraft) => {
+    setDraftEntries((prev) => ({ ...prev, [category]: entry }));
+    setActiveCategory(null);
+  };
+
   const handleSaveActual = async () => {
-    if (!from || !to) {
-      alert("Periode from/to wajib dipilih");
+    const weekIdNumber = selectedWeekId ? Number(selectedWeekId) : NaN;
+    if (Number.isNaN(weekIdNumber)) {
+      alert("Pilih minggu terlebih dahulu");
       return;
     }
-    if (!selectedPeriodId || selectedPeriodId === "new") {
-      alert("Pilih periode plan terlebih dahulu");
+    const week = weeks.find((item) => item.id === weekIdNumber);
+    if (!week) {
+      alert("Data minggu tidak ditemukan");
       return;
     }
-    const periodId = Number(selectedPeriodId);
+    const name = currentPeriodName.trim() || week.name;
+    if (!name) {
+      alert("Nama periode wajib diisi");
+      return;
+    }
     const entriesPayload = draftList
       .filter((entry) => entry.actualAmount > 0)
       .map((entry) => ({
@@ -231,17 +371,15 @@ export default function FinanceActualPage() {
         amount: entry.actualAmount,
         data: entry.actualData,
       }));
+
     const res = await fetch("/api/finance/actual", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         period: {
-          id: periodId,
-          name: periodInfo.name,
-          month: periodInfo.month,
-          year: periodInfo.year,
-          startDate: from.toISOString(),
-          endDate: to.toISOString(),
+          id: currentPeriodId ?? undefined,
+          name,
+          weekId: weekIdNumber,
         },
         entries: entriesPayload,
       }),
@@ -252,12 +390,14 @@ export default function FinanceActualPage() {
       return;
     }
     const data = (await res.json()) as { actualEntries: ApiActualEntry[] };
-    const draft: ActualDraftState = {};
+    const actualDraft: ActualDraftState = {};
     data.actualEntries.forEach((entry) => {
-      draft[entry.category] = { amount: entry.amount, data: entry.data };
+      actualDraft[entry.category] = { amount: entry.amount, data: entry.data };
     });
-    setDraftEntries(draft);
-    await loadMetrics(periodId);
+    setDraftEntries(actualDraft);
+    await loadWeeks();
+    const updatedPeriodId = await loadActualDetailByWeek(weekIdNumber);
+    await loadMetricsData(updatedPeriodId, weekIdNumber);
     alert("Actual berhasil disimpan");
   };
 
@@ -265,64 +405,84 @@ export default function FinanceActualPage() {
     <div className="space-y-6">
       <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="space-y-2">
-          <Label>Periode From</Label>
-          <DateTimePicker value={from} onChange={setFrom} />
-        </div>
-        <div className="space-y-2">
-          <Label>Periode To</Label>
-          <DateTimePicker value={to} onChange={setTo} />
-        </div>
-        <div className="space-y-2">
-          <Label>Pilih Periode Plan</Label>
-          <Select value={selectedPeriodId} onValueChange={setSelectedPeriodId}>
+          <Label>Pilih Bulan</Label>
+          <Select value={selectedMonthKey} onValueChange={setSelectedMonthKey} disabled={monthOptions.length === 0}>
             <SelectTrigger>
-              <SelectValue placeholder="Pilih Periode" />
+              <SelectValue placeholder={monthOptions.length === 0 ? "Belum ada minggu" : "Pilih Bulan"} />
             </SelectTrigger>
             <SelectContent>
-              {planPeriods.map((period) => (
-                <SelectItem key={period.id} value={String(period.id)}>
-                  {period.name} ({period.month}/{period.year})
+              {monthOptions.length === 0 && (
+                <SelectItem value="__empty" disabled>
+                  Belum ada data bulan
+                </SelectItem>
+              )}
+              {monthOptions.map((option) => (
+                <SelectItem key={option.key} value={option.key}>
+                  {formatMonthLabel(option.month, option.year)}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
         </div>
+        <div className="space-y-2">
+          <Label>Pilih Minggu</Label>
+          <Select value={selectedWeekId} onValueChange={setSelectedWeekId} disabled={weeksInSelectedMonth.length === 0}>
+            <SelectTrigger>
+              <SelectValue placeholder={weeksInSelectedMonth.length === 0 ? "Tidak ada minggu" : "Pilih Minggu"} />
+            </SelectTrigger>
+            <SelectContent>
+              {weeksInSelectedMonth.length === 0 && (
+                <SelectItem value="__empty" disabled>
+                  Tidak ada minggu pada bulan ini
+                </SelectItem>
+              )}
+              {weeksInSelectedMonth.map((week) => (
+                <SelectItem key={week.id} value={String(week.id)}>
+                  {formatWeekLabel(week)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2">
+          <Label>Rentang Tanggal</Label>
+          <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm">
+            {formatDateRange(from, to)}
+          </div>
+        </div>
+      </section>
+
+      <section className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="space-y-2">
+          <Label>Minggu Terpilih</Label>
+          <div className="rounded-md border border-gray-200 bg-white px-3 py-2 text-sm">
+            {selectedWeekLabel || "-"}
+          </div>
+        </div>
+        <div className="space-y-2">
+          <Label>Nama Plan</Label>
+          <div className="rounded-md border border-gray-200 bg-white px-3 py-2 text-sm">
+            {currentPeriodName || "-"}
+          </div>
+        </div>
+        <div className="space-y-2">
+          <Label>Total Plan</Label>
+          <div className="rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-semibold">
+            {formatCurrency(totalPlan)}
+          </div>
+        </div>
+        <div className="space-y-2">
+          <Label>Total Actual</Label>
+          <div className="rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-semibold">
+            {formatCurrency(totalActual)}
+          </div>
+        </div>
       </section>
 
       <section className="space-y-4">
         <div className="flex items-center justify-between">
-          <h2 className="font-semibold">Perbandingan Plan vs Actual</h2>
-          <div className="flex items-center gap-2">
-            <Select
-              value={activeCategory ?? ""}
-              onValueChange={(value) => setActiveCategory(value as FinanceCategory)}
-            >
-              <SelectTrigger className="w-56">
-                <SelectValue placeholder="Tambah Actual kategori" />
-              </SelectTrigger>
-              <SelectContent>
-                {CATEGORY_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button
-              type="button"
-              onClick={() => {
-                if (!activeCategory) {
-                  alert("Pilih kategori terlebih dahulu");
-                  return;
-                }
-                setActiveCategory(activeCategory);
-              }}
-            >
-              Open Form
-            </Button>
-          </div>
+          <h2 className="font-semibold">Plan vs Actual Pengeluaran</h2>
         </div>
-
         <Table>
           <TableHeader>
             <TableRow>
@@ -353,51 +513,82 @@ export default function FinanceActualPage() {
                 </TableRow>
               );
             })}
-            <TableRow>
-              <TableCell className="font-semibold">Total</TableCell>
-              <TableCell>{formatCurrency(totalPlan)}</TableCell>
-              <TableCell>{formatCurrency(totalActual)}</TableCell>
-              <TableCell className="text-right">
-                {totalPlan > 0 ? `${((totalActual / totalPlan) * 100).toFixed(1)}%` : "-"}
-              </TableCell>
-              <TableCell />
-            </TableRow>
+            {draftList.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={5} className="text-center text-sm text-gray-500">
+                  Belum ada data actual
+                </TableCell>
+              </TableRow>
+            )}
           </TableBody>
         </Table>
       </section>
 
-      <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="space-y-1">
-          <div className="text-sm text-gray-500">Actual Revenue (Sales)</div>
-          <div className="text-lg font-semibold">{formatCurrency(actualRevenueTotal)}</div>
-        </div>
-        <div className="space-y-1">
-          <div className="text-sm text-gray-500">Total Plan</div>
-          <div className="text-lg font-semibold">{formatCurrency(totalPlan)}</div>
-        </div>
-        <div className="space-y-1">
-          <div className="text-sm text-gray-500">Total Actual Pengeluaran</div>
-          <div className="text-lg font-semibold">{formatCurrency(totalActual)}</div>
+      <section className="space-y-3">
+        <div className="flex items-center gap-3">
+          <div className="space-y-1">
+            <Label>Tambah Actual Pengeluaran</Label>
+            <div className="flex flex-wrap items-center gap-3">
+              <Select value={activeCategory ?? ""} onValueChange={(value) => setActiveCategory(value as FinanceCategory)}>
+                <SelectTrigger className="w-56">
+                  <SelectValue placeholder="Pilih kategori" />
+                </SelectTrigger>
+                <SelectContent>
+                  {CATEGORY_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                type="button"
+                onClick={() => {
+                  if (!activeCategory) {
+                    alert("Pilih kategori terlebih dahulu");
+                    return;
+                  }
+                  setActiveCategory(activeCategory);
+                }}
+              >
+                Open Form
+              </Button>
+            </div>
+          </div>
         </div>
       </section>
 
-      <section className="space-y-2">
-        <div className="text-sm text-gray-500">Net Profit (Actual Revenue - Plan)</div>
-        <div className={cn("text-lg font-semibold", netProfitPlan < 0 && "text-red-600")}>
-          {formatCurrency(netProfitPlan)}
+      <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <div className="text-sm text-gray-500">Actual Revenue</div>
+          <div className="text-lg font-semibold">{formatCurrency(actualRevenueTotal)}</div>
         </div>
-        <div className="text-sm text-gray-500">Actual Net Profit (Actual Revenue - Actual Pengeluaran)</div>
-        <div className={cn("text-lg font-semibold", netProfitActual < 0 && "text-red-600")}>
-          {formatCurrency(netProfitActual)}
+        <div className="space-y-2">
+          <div className="text-sm text-gray-500">Total Omset Diterima (PAID)</div>
+          <div className="text-lg font-semibold">{formatCurrency(totalOmsetPaid)}</div>
         </div>
-        <div className="text-sm text-gray-500">Pinjam Modal</div>
-        <div className={cn("text-lg font-semibold", pinjamModalDisplay > 0 && "text-red-600")}>
-          {formatCurrency(pinjamModalDisplay)}
+        <div className="space-y-2">
+          <div className="text-sm text-gray-500">Net Margin Berdasarkan Plan</div>
+          <div className={cn("text-lg font-semibold", netProfitPlan < 0 && "text-red-600")}>
+            {formatCurrency(netProfitPlan)}
+          </div>
+        </div>
+        <div className="space-y-2">
+          <div className="text-sm text-gray-500">Net Margin Aktual</div>
+          <div className={cn("text-lg font-semibold", netProfitActual < 0 && "text-red-600")}>
+            {formatCurrency(netProfitActual)}
+          </div>
+        </div>
+        <div className="space-y-2">
+          <div className="text-sm text-gray-500">Pinjam Modal (jika omset &lt; plan)</div>
+          <div className={cn("text-lg font-semibold", pinjamModalDisplay > 0 ? "text-red-600" : "")}> 
+            {formatCurrency(pinjamModalDisplay)}
+          </div>
         </div>
       </section>
 
       <div className="flex justify-end">
-        <Button onClick={handleSaveActual} className="px-6">
+        <Button onClick={handleSaveActual} className="px-6" disabled={!selectedWeek}>
           Simpan Actual
         </Button>
       </div>
@@ -414,6 +605,7 @@ export default function FinanceActualPage() {
     </div>
   );
 }
+
 
 function ActualCategoryDialog({
   category,
@@ -464,6 +656,19 @@ function PlanEntryDetails({ category, data }: { category: FinanceCategory; data:
   if (!data) return <span className="text-sm text-gray-500">-</span>;
   switch (category) {
     case "BAHAN":
+      // For Actual: show list of items if available; otherwise fall back to kebutuhan summary
+      if (Array.isArray(data?.items) && data.items.length > 0) {
+        return (
+          <div className="text-sm text-gray-600">
+            {data.items.map((item: any, idx: number) => (
+              <div key={`${item?.name ?? idx}-${idx}`} className="flex justify-between gap-4">
+                <span>{item?.name}</span>
+                <span>{formatCurrency(item?.amount ?? 0)}</span>
+              </div>
+            ))}
+          </div>
+        );
+      }
       return (
         <div className="space-y-1 text-sm">
           <div>Kebutuhan: {formatCurrency(data?.kebutuhan ?? 0)}</div>
@@ -529,24 +734,46 @@ function BahanActualForm({
   onSubmit,
 }: {
   initial?: ActualEntryDraft;
-  planBudget: number;
+  planBudget?: number;
   onCancel: () => void;
   onSubmit: (entry: ActualEntryDraft) => void;
 }) {
   const initialData = initial?.data ?? {};
-  const [value, setValue] = useState<string>(
-    initialData?.kebutuhan ? String(initialData.kebutuhan) : initial ? String(initial.amount) : "",
+  const [items, setItems] = useState<Array<{ name: string; amount: string }>>(
+    Array.isArray(initialData?.items)
+      ? initialData.items.map((item: any) => ({
+          name: item.name || "",
+          amount: item.amount ? String(item.amount) : "",
+        }))
+      : []
   );
-  const kebutuhanValue = Math.round(Number(value || 0));
-  const difference = kebutuhanValue - planBudget;
+  const [newName, setNewName] = useState("");
+  const [newAmount, setNewAmount] = useState("");
+
+  const addItem = () => {
+    if (!newName.trim() || !newAmount.trim()) {
+      alert("Nama dan nilai wajib diisi");
+      return;
+    }
+    setItems((prev) => [...prev, { name: newName, amount: newAmount }]);
+    setNewName("");
+    setNewAmount("");
+  };
+
+  const removeItem = (index: number) => {
+    setItems((prev) => prev.filter((_, idx) => idx !== index));
+  };
+
+  const total = items.reduce((sum, item) => sum + Math.round(Number(item.amount || 0)), 0);
 
   const handleSubmit = () => {
     onSubmit({
-      amount: kebutuhanValue,
+      amount: total,
       data: {
-        kebutuhan: kebutuhanValue,
-        planBudget,
-        difference,
+        items: items.map((item) => ({
+          name: item.name,
+          amount: Math.round(Number(item.amount || 0)),
+        })),
       },
     });
     onCancel();
@@ -554,18 +781,43 @@ function BahanActualForm({
 
   return (
     <>
-      <div className="space-y-3">
-        <div className="space-y-1">
-          <Label>Plan Budget</Label>
-          <Input value={planBudget} readOnly className="bg-gray-50" />
+      <div className="space-y-4">
+        <Label>Actual Bahan</Label>
+        {items.map((item, idx) => (
+          <div key={`${item.name}-${idx}`} className="flex items-center gap-2">
+            <Input
+              value={item.name}
+              onChange={(e) =>
+                setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, name: e.target.value } : it)))
+              }
+              placeholder="Nama"
+            />
+            <Input
+              type="number"
+              min="0"
+              value={item.amount}
+              onChange={(e) =>
+                setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, amount: e.target.value } : it)))
+              }
+              placeholder="Rp"
+            />
+            <Button variant="ghost" size="sm" onClick={() => removeItem(idx)}>
+              Hapus
+            </Button>
+          </div>
+        ))}
+        <div className="flex gap-2">
+          <Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Nama" />
+          <Input
+            type="number"
+            min="0"
+            value={newAmount}
+            onChange={(e) => setNewAmount(e.target.value)}
+            placeholder="Rp"
+          />
+          <Button onClick={addItem}>Add</Button>
         </div>
-        <div className="space-y-1">
-          <Label>Actual Kebutuhan (Rp)</Label>
-          <Input type="number" min="0" value={value} onChange={(e) => setValue(e.target.value)} />
-        </div>
-        <div className={cn("text-sm font-medium", difference > 0 ? "text-red-600" : "text-green-600")}>
-          {difference > 0 ? "Over Plan" : "Sisa"} {formatCurrency(Math.abs(difference))}
-        </div>
+        <div className="text-sm font-semibold">Total: {formatCurrency(total)}</div>
       </div>
       <DialogFooter>
         <Button variant="outline" onClick={onCancel}>
@@ -718,6 +970,8 @@ function SimpleActualListForm({
           name: item.name || "",
           amount: item.amount ? String(item.amount) : "",
         }))
+      : category === "OPERASIONAL"
+      ? []
       : Array.isArray(planData?.items)
       ? planData.items.map((item: any) => ({
           name: item.name || "",

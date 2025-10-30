@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 
 // This endpoint is deprecated and removed per latest requirements.
 // Keeping the file to prevent 404 errors but no actual functionality

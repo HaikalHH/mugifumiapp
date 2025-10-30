@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
@@ -83,7 +83,7 @@ type Delivery = {
 import { useAuth } from "../providers";
 
 export default function DeliveryPage() {
-  const { username } = useAuth();
+  const { user } = useAuth();
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const [pendingOrders, setPendingOrders] = useState<Order[]>([]);
   const [pendingOrdersLoading, setPendingOrdersLoading] = useState(true);
@@ -109,20 +109,20 @@ export default function DeliveryPage() {
   const [searchQuery, setSearchQuery] = useState("");
 
   // Lock region filter based on user role
-  const getInitialRegion = () => {
-    if (username === "Admin" || username === "Manager") {
+  const getInitialRegion = useCallback(() => {
+    if (user?.role === "Admin" || user?.role === "Manager") {
       return "all"; // Admin and Manager can see all regions
-    } else if (username === "Jakarta") {
+    } else if (user?.role === "Jakarta") {
       return "Jakarta"; // Jakarta user locked to Jakarta
-    } else if (username === "Bandung") {
+    } else if (user?.role === "Bandung") {
       return "Bandung"; // Bandung user locked to Bandung
     }
     return "all"; // Default fallback
-  };
+  }, [user?.role]);
 
   const [lockedRegion, setLockedRegion] = useState(getInitialRegion());
 
-  const loadDeliveries = async () => {
+  const loadDeliveries = useCallback(async () => {
     const params = new URLSearchParams({ page: String(page), pageSize: "10" });
     if (regionFilter !== "all") {
       params.set("location", regionFilter);
@@ -134,9 +134,9 @@ export default function DeliveryPage() {
     const data = await res.json();
     setDeliveries(data.rows || []);
     setTotal(data.total || 0);
-  };
+  }, [page, regionFilter, searchQuery]);
 
-  const loadPendingOrders = async () => {
+  const loadPendingOrders = useCallback(async () => {
     try {
       setPendingOrdersLoading(true);
       const params = new URLSearchParams({ page: String(pendingPage), pageSize: "10" });
@@ -156,17 +156,17 @@ export default function DeliveryPage() {
     } finally {
       setPendingOrdersLoading(false);
     }
-  };
+  }, [pendingPage, regionFilter, searchQuery]);
 
   // Lock region filter based on user role
   useEffect(() => {
     const initialRegion = getInitialRegion();
     setLockedRegion(initialRegion);
     setRegionFilter(initialRegion);
-  }, [username]);
+  }, [getInitialRegion]);
 
-  useEffect(() => { loadDeliveries(); }, [page, regionFilter, searchQuery]);
-  useEffect(() => { loadPendingOrders(); }, [pendingPage, regionFilter, searchQuery]);
+  useEffect(() => { loadDeliveries(); }, [loadDeliveries]);
+  useEffect(() => { loadPendingOrders(); }, [loadPendingOrders]);
 
   const openModal = async (order: Order) => {
     setSelectedOrder(order);
@@ -413,7 +413,7 @@ export default function DeliveryPage() {
       <div className="flex gap-3 items-end">
         <div className="flex flex-col gap-1">
           <Label>Filter by Region</Label>
-          {(username === "Admin" || username === "Manager") ? (
+          {(user?.role === "Admin" || user?.role === "Manager") ? (
             <Select value={regionFilter} onValueChange={setRegionFilter}>
               <SelectTrigger className="w-[200px]">
                 <SelectValue placeholder="All Regions" />
@@ -566,7 +566,7 @@ export default function DeliveryPage() {
                     >
                       {delivery.status === "pending" ? "Process" : "View"}
                     </Button>
-                    {username === "Admin" && delivery.status === "delivered" && (
+                    {user?.role === "Admin" && delivery.status === "delivered" && (
                       <Button 
                         variant="link" 
                         className="text-red-600 p-0 h-auto"

@@ -1,11 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { FinanceCategory } from "@prisma/client";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { Label } from "../../../components/ui/label";
-import { DateTimePicker } from "../../../components/ui/date-picker";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../components/ui/table";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "../../../components/ui/dialog";
@@ -13,17 +12,29 @@ import { Badge } from "../../../components/ui/badge";
 import { cn } from "../../../lib/utils";
 
 type Metrics = {
-  actualRevenueByOutlet: Array<{ outlet: string; amount: number }>;
+  actualRevenueByOutlet: Array<{ outlet: string; amount: number; totalAmount: number; discountPct: number }>;
+  actualRevenueByOutletRegion: Array<{ outletRegion: string; amount: number; totalAmount: number; discountPct: number }>;
   actualRevenueTotal: number;
   bahanBudget: number;
   totalOmsetPaid: number;
+  totalOmsetPaidByOutlet: Array<{ outlet: string; amount: number }>;
   danaTertahan: Array<{ outlet: string; amount: number }>;
+  danaTertahanTotal: number;
+  danaTertahanDetails: Array<{ outlet: string; entries: Array<{ customer: string; amount: number }> }>;
   totalPlanAmount: number;
   planEntries: ApiPlanEntry[];
   totalActualSpent: number;
   actualEntries: ApiActualEntry[];
   netMargin: number;
   pinjamModal: number;
+};
+
+type SalesData = {
+  byOutlet: Record<string, { count: number; actual: number; potonganPct: number | null; potonganAmount: number }>;
+  byOutletRegion: Record<string, { count: number; actual: number; potonganPct: number | null; potonganAmount: number }>;
+  totalActual: number;
+  avgPotonganPct: number | null;
+  totalPotonganAmount: number;
 };
 
 type ApiPlanEntry = {
@@ -40,19 +51,6 @@ type ApiActualEntry = {
   data: any;
 };
 
-type PeriodSummary = {
-  id: number;
-  name: string;
-  month: number;
-  year: number;
-  startDate: string;
-  endDate: string;
-  totalPlan: number;
-  totalActual: number;
-  planEntryCount: number;
-  actualEntryCount: number;
-};
-
 type PlanEntryDraft = {
   amount: number;
   data: any;
@@ -60,15 +58,24 @@ type PlanEntryDraft = {
 
 type PlanDraftState = Partial<Record<FinanceCategory, PlanEntryDraft>>;
 
+type WeekOption = {
+  id: number;
+  name: string;
+  month: number;
+  year: number;
+  startDate: string;
+  endDate: string;
+};
+
 type PlanDetailResponse = {
   period: {
     id: number;
     name: string;
-    month: number;
-    year: number;
+    weekId: number | null;
+    week: WeekOption | null;
     startDate: string;
     endDate: string;
-  };
+  } | null;
   planEntries: ApiPlanEntry[];
   actualEntries: ApiActualEntry[];
 };
@@ -87,87 +94,135 @@ const CATEGORY_OPTIONS: Array<{ value: FinanceCategory; label: string }> = Objec
   ([value, label]) => ({ value: value as FinanceCategory, label }),
 );
 
-function startOfCurrentMonth(): Date {
-  const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth(), 1);
+const MONTH_NAMES = [
+  "Januari",
+  "Februari",
+  "Maret",
+  "April",
+  "Mei",
+  "Juni",
+  "Juli",
+  "Agustus",
+  "September",
+  "Oktober",
+  "November",
+  "Desember",
+];
+
+function monthKey(month: number, year: number): string {
+  return `${year}-${String(month).padStart(2, "0")}`;
 }
 
-function endOfCurrentMonth(): Date {
-  const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
-}
-
-function endOfMonthOf(date: Date): Date {
-  return new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59, 999);
+function formatMonthLabel(month: number, year: number): string {
+  const name = MONTH_NAMES[month - 1] ?? `Bulan ${month}`;
+  return `${name} ${year}`;
 }
 
 function formatCurrency(amount: number): string {
   return `Rp ${amount.toLocaleString("id-ID")}`;
 }
 
+function formatDateRange(from?: Date, to?: Date): string {
+  if (!from || !to) return "-";
+  return `${from.toLocaleDateString("id-ID")} - ${to.toLocaleDateString("id-ID")}`;
+}
+
+function formatWeekLabel(week: WeekOption): string {
+  const start = new Date(week.startDate).toLocaleDateString("id-ID");
+  const end = new Date(week.endDate).toLocaleDateString("id-ID");
+  return `${week.name} (${start} - ${end})`;
+}
+
 export default function FinancePlanPage() {
-  const [from, setFrom] = useState<Date | undefined>(startOfCurrentMonth());
-  const [to, setTo] = useState<Date | undefined>(endOfCurrentMonth());
+  const [weeks, setWeeks] = useState<WeekOption[]>([]);
+  const [selectedMonthKey, setSelectedMonthKey] = useState("");
+  const [selectedWeekId, setSelectedWeekId] = useState("");
+  const [currentPeriodId, setCurrentPeriodId] = useState<number | null>(null);
+  const [currentPeriodName, setCurrentPeriodName] = useState("");
+  const [from, setFrom] = useState<Date | undefined>();
+  const [to, setTo] = useState<Date | undefined>();
   const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [loadingMetrics, setLoadingMetrics] = useState(false);
-  const [planPeriods, setPlanPeriods] = useState<PeriodSummary[]>([]);
-  const [selectedPeriodId, setSelectedPeriodId] = useState<string>("");
-  const [periodForm, setPeriodForm] = useState({
-    name: "",
-    month: new Date().getMonth() + 1,
-    year: new Date().getFullYear(),
-  });
+  const [salesData, setSalesData] = useState<SalesData | null>(null);
+  const [loadingSales, setLoadingSales] = useState(false);
   const [draftEntries, setDraftEntries] = useState<PlanDraftState>({});
   const [activeCategory, setActiveCategory] = useState<FinanceCategory | null>(null);
 
-  // Fetch plan periods list
-  const loadPlanPeriods = async () => {
-    const res = await fetch("/api/finance/plan");
+  const loadWeeks = useCallback(async () => {
+    const res = await fetch("/api/finance/weeks");
     if (!res.ok) {
-      console.error("Failed to load finance periods");
+      console.error("Failed to load finance weeks");
       return;
     }
     const data = await res.json();
-    const periods: PeriodSummary[] = data.periods || [];
-    setPlanPeriods(periods);
-    if (!selectedPeriodId && periods.length > 0) {
-      setSelectedPeriodId(String(periods[0].id));
-    }
-  };
+    const list: WeekOption[] = Array.isArray(data.weeks) ? data.weeks : [];
+    list.sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
+    setWeeks(list);
+  }, []);
 
-  const loadPlanDetail = async (periodId: number) => {
-    const res = await fetch(`/api/finance/plan?periodId=${periodId}`);
-    if (!res.ok) {
-      console.error("Failed to load plan detail");
-      return;
-    }
-    const data = (await res.json()) as PlanDetailResponse;
-    if (data.period) {
-      setPeriodForm({
-        name: data.period.name,
-        month: data.period.month,
-        year: data.period.year,
+  const loadPlanDetailByWeek = useCallback(async (weekId: number): Promise<number | null> => {
+    try {
+      const res = await fetch(`/api/finance/plan?weekId=${weekId}`);
+      if (res.status === 404) {
+        const week = weeks.find((item) => item.id === weekId);
+        setCurrentPeriodId(null);
+        setCurrentPeriodName(week?.name ?? "");
+        setDraftEntries({});
+        return null;
+      }
+      if (!res.ok) {
+        console.error("Failed to load plan detail");
+        return null;
+      }
+      const data = (await res.json()) as PlanDetailResponse;
+      if (!data.period) {
+        const week = weeks.find((item) => item.id === weekId);
+        setCurrentPeriodId(null);
+        setCurrentPeriodName(week?.name ?? "");
+        setDraftEntries({});
+        return null;
+      }
+
+      setCurrentPeriodId(data.period.id);
+      setCurrentPeriodName(data.period.name);
+
+      const periodWeek = data.period.week;
+      if (periodWeek) {
+        setWeeks((prev) => {
+          const exists = prev.some((item) => item.id === periodWeek.id);
+          if (exists) return prev;
+          const next = [...prev, periodWeek];
+          next.sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
+          return next;
+        });
+        setFrom(new Date(periodWeek.startDate));
+        setTo(new Date(periodWeek.endDate));
+      } else {
+        setFrom(new Date(data.period.startDate));
+        setTo(new Date(data.period.endDate));
+      }
+
+      const newDraft: PlanDraftState = {};
+      data.planEntries.forEach((entry) => {
+        newDraft[entry.category] = { amount: entry.amount, data: entry.data };
       });
-      const startDate = new Date(data.period.startDate);
-      const endDate = new Date(data.period.endDate);
-      setFrom(startDate);
-      setTo(endDate);
-    }
-    const newDraft: PlanDraftState = {};
-    for (const entry of data.planEntries) {
-      newDraft[entry.category] = { amount: entry.amount, data: entry.data };
-    }
-    setDraftEntries(newDraft);
-  };
+      setDraftEntries(newDraft);
 
-  const loadMetrics = async (periodId: number | null) => {
-    if (!from || !to) return;
+      return data.period.id;
+    } catch (error) {
+      console.error("Failed to load plan detail", error);
+      return null;
+    }
+  }, [weeks]);
+
+  const loadMetricsData = useCallback(async (periodId: number | null, weekId: number) => {
     setLoadingMetrics(true);
     try {
       const query = new URLSearchParams();
-      query.set("from", from.toISOString());
-      query.set("to", to.toISOString());
-      if (periodId) query.set("periodId", String(periodId));
+      query.set("weekId", String(weekId));
+      if (periodId) {
+        query.set("periodId", String(periodId));
+      }
       const res = await fetch(`/api/finance/metrics?${query.toString()}`);
       if (!res.ok) {
         console.error("Failed to load finance metrics");
@@ -175,63 +230,154 @@ export default function FinancePlanPage() {
       }
       const data = (await res.json()) as Metrics;
       setMetrics(data);
-      if (periodId && data.planEntries) {
+      if (periodId && data.planEntries && data.planEntries.length > 0) {
         const newDraft: PlanDraftState = {};
-        for (const entry of data.planEntries) {
+        data.planEntries.forEach((entry) => {
           newDraft[entry.category] = { amount: entry.amount, data: entry.data };
-        }
+        });
         setDraftEntries((prev) => ({ ...prev, ...newDraft }));
       }
+    } catch (error) {
+      console.error("Failed to load finance metrics", error);
     } finally {
       setLoadingMetrics(false);
     }
-  };
+  }, []);
 
-  useEffect(() => {
-    loadPlanPeriods();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  const loadSalesData = useCallback(async (weekId: number) => {
+    setLoadingSales(true);
+    try {
+      const res = await fetch(`/api/finance/sales?weekId=${weekId}`);
+      if (!res.ok) {
+        console.error("Failed to load finance sales data");
+        return;
+      }
+      const data = await res.json();
+      setSalesData(data);
+    } catch (error) {
+      console.error("Failed to load finance sales data", error);
+    } finally {
+      setLoadingSales(false);
+    }
   }, []);
 
   useEffect(() => {
-    if (selectedPeriodId && selectedPeriodId !== "new") {
-      const periodId = Number(selectedPeriodId);
-      if (!Number.isNaN(periodId)) {
-        loadPlanDetail(periodId);
-      }
+    loadWeeks();
+  }, [loadWeeks]);
+
+  useEffect(() => {
+    if (weeks.length === 0) {
+      setSelectedMonthKey("");
+      setSelectedWeekId("");
+      return;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedPeriodId]);
+    if (!selectedMonthKey || !weeks.some((week) => monthKey(week.month, week.year) === selectedMonthKey)) {
+      const firstWeek = weeks[0];
+      const key = monthKey(firstWeek.month, firstWeek.year);
+      setSelectedMonthKey(key);
+      setSelectedWeekId(String(firstWeek.id));
+    }
+  }, [weeks, selectedMonthKey]);
 
   useEffect(() => {
-    const periodId = selectedPeriodId && selectedPeriodId !== "new" ? Number(selectedPeriodId) : null;
-    loadMetrics(periodId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [from, to, selectedPeriodId]);
+    if (!selectedMonthKey) {
+      setSelectedWeekId("");
+      setCurrentPeriodId(null);
+      setCurrentPeriodName("");
+      setDraftEntries({});
+      setMetrics(null);
+      return;
+    }
+    const [yearStr, monthStr] = selectedMonthKey.split("-");
+    const month = Number(monthStr);
+    const year = Number(yearStr);
+    const availableWeeks = weeks
+      .filter((week) => week.month === month && week.year === year)
+      .sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
+    if (availableWeeks.length === 0) {
+      setSelectedWeekId("");
+      setCurrentPeriodId(null);
+      setCurrentPeriodName("");
+      setDraftEntries({});
+      setMetrics(null);
+      return;
+    }
+    if (!availableWeeks.some((week) => String(week.id) === selectedWeekId)) {
+      setSelectedWeekId(String(availableWeeks[0].id));
+    }
+  }, [selectedMonthKey, weeks, selectedWeekId]);
 
   useEffect(() => {
-    if (!from) return;
-    if (selectedPeriodId && selectedPeriodId !== "new") return;
+    if (!selectedWeekId) {
+      setFrom(undefined);
+      setTo(undefined);
+      setCurrentPeriodId(null);
+      setCurrentPeriodName("");
+      setDraftEntries({});
+      setMetrics(null);
+      return;
+    }
+    const week = weeks.find((item) => String(item.id) === selectedWeekId);
+    if (week) {
+      setFrom(new Date(week.startDate));
+      setTo(new Date(week.endDate));
+      setCurrentPeriodName((prev) => (prev ? prev : week.name));
+    }
+    const weekIdNumber = Number(selectedWeekId);
+    if (Number.isNaN(weekIdNumber)) return;
+    (async () => {
+      const periodId = await loadPlanDetailByWeek(weekIdNumber);
+      await Promise.all([
+        loadMetricsData(periodId, weekIdNumber),
+        loadSalesData(weekIdNumber)
+      ]);
+    })();
+  }, [selectedWeekId, weeks, loadPlanDetailByWeek, loadMetricsData, loadSalesData]);
 
-    const monthValue = from.getMonth() + 1;
-    const yearValue = from.getFullYear();
-    const monthName = from.toLocaleString("id-ID", { month: "long" });
-
-    setPeriodForm((prev) => ({
-      ...prev,
-      month: monthValue,
-      year: yearValue,
-      name: prev.name?.trim() ? prev.name : monthName,
-    }));
-
-    setTo((prev) => {
-      if (!prev) return endOfMonthOf(from);
-      if (prev.getMonth() === from.getMonth() && prev.getFullYear() === from.getFullYear()) {
-        return prev;
+  const monthOptions = useMemo(() => {
+    const map = new Map<string, { key: string; month: number; year: number }>();
+    weeks.forEach((week) => {
+      const key = monthKey(week.month, week.year);
+      if (!map.has(key)) {
+        map.set(key, { key, month: week.month, year: week.year });
       }
-      return endOfMonthOf(from);
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [from, selectedPeriodId]);
+    return Array.from(map.values()).sort((a, b) => (b.year - a.year) || (b.month - a.month));
+  }, [weeks]);
+
+  const weeksInSelectedMonth = useMemo(() => {
+    if (!selectedMonthKey) return [] as WeekOption[];
+    const [yearStr, monthStr] = selectedMonthKey.split("-");
+    const month = Number(monthStr);
+    const year = Number(yearStr);
+    return weeks
+      .filter((week) => week.month === month && week.year === year)
+      .sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
+  }, [selectedMonthKey, weeks]);
+
+  const selectedWeek = useMemo(() => {
+    return weeks.find((week) => String(week.id) === selectedWeekId) ?? null;
+  }, [weeks, selectedWeekId]);
+
+  const selectedWeekLabel = useMemo(() => {
+    return selectedWeek ? formatWeekLabel(selectedWeek) : "";
+  }, [selectedWeek]);
+
+  const draftEntriesList = useMemo(() => {
+    return CATEGORY_OPTIONS.filter((item) => draftEntries[item.value]).map((item) => ({
+      category: item.value,
+      label: item.label,
+      amount: draftEntries[item.value]!.amount,
+      data: draftEntries[item.value]!.data,
+    }));
+  }, [draftEntries]);
+
+  const totalDraftAmount = draftEntriesList.reduce((sum, entry) => sum + entry.amount, 0);
+  const actualRevenueTotal = salesData?.totalActual ?? 0;
+  const totalOmsetPaid = metrics?.totalOmsetPaid ?? 0;
+  const netMarginDisplay = actualRevenueTotal - totalDraftAmount;
+  const pinjamModalDisplay = totalDraftAmount > totalOmsetPaid ? totalDraftAmount - totalOmsetPaid : 0;
+  const bahanBudget = metrics?.bahanBudget ?? 0;
 
   const handleCategorySubmit = (category: FinanceCategory, entry: PlanEntryDraft) => {
     setDraftEntries((prev) => ({ ...prev, [category]: entry }));
@@ -246,27 +392,19 @@ export default function FinancePlanPage() {
     });
   };
 
-  const draftEntriesList = useMemo(() => {
-    return CATEGORY_OPTIONS.filter((item) => draftEntries[item.value]).map((item) => ({
-      category: item.value,
-      label: item.label,
-      amount: draftEntries[item.value]!.amount,
-      data: draftEntries[item.value]!.data,
-    }));
-  }, [draftEntries]);
-
-  const totalDraftAmount = draftEntriesList.reduce((sum, entry) => sum + entry.amount, 0);
-  const actualRevenueTotal = metrics?.actualRevenueTotal ?? 0;
-  const totalOmsetPaid = metrics?.totalOmsetPaid ?? 0;
-  const netMarginDisplay = actualRevenueTotal - totalDraftAmount;
-  const pinjamModalDisplay = totalDraftAmount > totalOmsetPaid ? totalDraftAmount - totalOmsetPaid : 0;
-
   const handleSavePlan = async () => {
-    if (!from || !to) {
-      alert("Periode from/to wajib dipilih");
+    const weekIdNumber = selectedWeekId ? Number(selectedWeekId) : NaN;
+    if (Number.isNaN(weekIdNumber)) {
+      alert("Pilih minggu terlebih dahulu");
       return;
     }
-    if (!periodForm.name.trim()) {
+    const week = weeks.find((item) => item.id === weekIdNumber);
+    if (!week) {
+      alert("Data minggu tidak ditemukan");
+      return;
+    }
+    const name = currentPeriodName.trim() || week.name;
+    if (!name) {
       alert("Nama periode wajib diisi");
       return;
     }
@@ -275,17 +413,16 @@ export default function FinancePlanPage() {
       amount: entry.amount,
       data: entry.data,
     }));
+
     const payload = {
       period: {
-        id: selectedPeriodId && selectedPeriodId !== "new" ? Number(selectedPeriodId) : undefined,
-        name: periodForm.name,
-        month: periodForm.month,
-        year: periodForm.year,
-        startDate: from.toISOString(),
-        endDate: to.toISOString(),
+        id: currentPeriodId ?? undefined,
+        name,
+        weekId: weekIdNumber,
       },
       entries: entriesPayload,
     };
+
     const res = await fetch("/api/finance/plan", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -296,107 +433,180 @@ export default function FinancePlanPage() {
       alert(err.error || "Gagal menyimpan plan");
       return;
     }
+
     const data = (await res.json()) as PlanDetailResponse;
-    setSelectedPeriodId(String(data.period.id));
+    const savedWeek = data.period?.week ?? week;
+    const savedWeekId = data.period?.weekId ?? savedWeek.id;
+
+    if (savedWeek) {
+      const key = monthKey(savedWeek.month, savedWeek.year);
+      setSelectedMonthKey(key);
+      setSelectedWeekId(String(savedWeekId));
+      setCurrentPeriodName(data.period?.name ?? savedWeek.name);
+    } else {
+      setCurrentPeriodName(data.period?.name ?? name);
+    }
+
+    setCurrentPeriodId(data.period?.id ?? null);
     setDraftEntries(() => {
-      const newDraft: PlanDraftState = {};
+      const next: PlanDraftState = {};
       data.planEntries.forEach((entry) => {
-        newDraft[entry.category] = { amount: entry.amount, data: entry.data };
+        next[entry.category] = { amount: entry.amount, data: entry.data };
       });
-      return newDraft;
+      return next;
     });
-    await Promise.all([loadPlanPeriods(), loadMetrics(data.period.id)]);
+
+    await loadWeeks();
+    await loadMetricsData(data.period?.id ?? null, savedWeekId);
     alert("Plan berhasil disimpan");
   };
-
-  const bahanBudget = metrics?.bahanBudget ?? 0;
 
   return (
     <div className="space-y-6">
       <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="space-y-2">
-          <Label>Periode From</Label>
-          <DateTimePicker value={from} onChange={setFrom} />
-        </div>
-        <div className="space-y-2">
-          <Label>Periode To</Label>
-          <DateTimePicker value={to} onChange={setTo} />
-        </div>
-        <div className="space-y-2">
-          <Label>Periode Plan</Label>
-          <Select value={selectedPeriodId} onValueChange={(value) => setSelectedPeriodId(value)}>
+          <Label>Pilih Bulan</Label>
+          <Select value={selectedMonthKey} onValueChange={setSelectedMonthKey} disabled={monthOptions.length === 0}>
             <SelectTrigger>
-              <SelectValue placeholder="Pilih Periode" />
+              <SelectValue placeholder={monthOptions.length === 0 ? "Belum ada minggu" : "Pilih Bulan"} />
             </SelectTrigger>
             <SelectContent>
-              {planPeriods.map((period) => (
-                <SelectItem key={period.id} value={String(period.id)}>
-                  {period.name} ({period.month}/{period.year})
+              {monthOptions.length === 0 && (
+                <SelectItem value="__empty" disabled>
+                  Belum ada data bulan
+                </SelectItem>
+              )}
+              {monthOptions.map((option) => (
+                <SelectItem key={option.key} value={option.key}>
+                  {formatMonthLabel(option.month, option.year)}
                 </SelectItem>
               ))}
-              <SelectItem value="new">+ Periode Baru</SelectItem>
             </SelectContent>
           </Select>
+        </div>
+        <div className="space-y-2">
+          <Label>Pilih Minggu</Label>
+          <Select
+            value={selectedWeekId}
+            onValueChange={setSelectedWeekId}
+            disabled={weeksInSelectedMonth.length === 0}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder={weeksInSelectedMonth.length === 0 ? "Tidak ada minggu" : "Pilih Minggu"} />
+            </SelectTrigger>
+            <SelectContent>
+              {weeksInSelectedMonth.length === 0 && (
+                <SelectItem value="__empty" disabled>
+                  Tidak ada minggu pada bulan ini
+                </SelectItem>
+              )}
+              {weeksInSelectedMonth.map((week) => (
+                <SelectItem key={week.id} value={String(week.id)}>
+                  {formatWeekLabel(week)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2">
+          <Label>Rentang Tanggal</Label>
+          <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm">
+            {formatDateRange(from, to)}
+          </div>
         </div>
       </section>
 
       <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="space-y-2">
-          <Label>Nama Periode</Label>
-          <Input
-            value={periodForm.name}
-            onChange={(e) => setPeriodForm((prev) => ({ ...prev, name: e.target.value }))}
-            placeholder="Contoh: Oktober 2024"
-          />
+          <Label>Nama Plan</Label>
+          <div className="rounded-md border border-gray-200 bg-white px-3 py-2 text-sm">
+            {currentPeriodName || "-"}
+          </div>
         </div>
         <div className="space-y-2">
-          <Label>Bulan</Label>
-          <Input
-            type="number"
-            min={1}
-            max={12}
-            value={periodForm.month}
-            onChange={(e) => setPeriodForm((prev) => ({ ...prev, month: Number(e.target.value) }))}
-          />
+          <Label>Minggu Terpilih</Label>
+          <div className="rounded-md border border-gray-200 bg-white px-3 py-2 text-sm">
+            {selectedWeekLabel || "-"}
+          </div>
         </div>
         <div className="space-y-2">
-          <Label>Tahun</Label>
-          <Input
-            type="number"
-            min={2020}
-            value={periodForm.year}
-            onChange={(e) => setPeriodForm((prev) => ({ ...prev, year: Number(e.target.value) }))}
-          />
+          <Label>Total Draft Plan</Label>
+          <div className="rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-semibold">
+            {formatCurrency(totalDraftAmount)}
+          </div>
         </div>
       </section>
 
       <section className="space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="font-semibold">Aktual Revenue (Sales)</h2>
-          {loadingMetrics && <span className="text-sm text-gray-500">Loading...</span>}
+          {(loadingMetrics || loadingSales) && <span className="text-sm text-gray-500">Loading...</span>}
         </div>
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>Outlet</TableHead>
               <TableHead className="text-right">Revenue</TableHead>
+              <TableHead className="text-right">Potongan %</TableHead>
+              <TableHead className="text-right">Jumlah Potongan</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {(metrics?.actualRevenueByOutlet || []).map((row) => (
-              <TableRow key={row.outlet}>
-                <TableCell>{row.outlet}</TableCell>
-                <TableCell className="text-right">{formatCurrency(row.amount)}</TableCell>
+            {salesData?.byOutlet && Object.entries(salesData.byOutlet).map(([outlet, data]) => (
+              <TableRow key={outlet}>
+                <TableCell>{outlet}</TableCell>
+                <TableCell className="text-right">{formatCurrency(data.actual)}</TableCell>
+                <TableCell className="text-right">
+                  {data.potonganPct !== null && data.potonganPct > 0 ? `${data.potonganPct}%` : "-"}
+                </TableCell>
+                <TableCell className="text-right">
+                  {data.potonganAmount > 0 ? formatCurrency(data.potonganAmount) : "-"}
+                </TableCell>
               </TableRow>
             ))}
             <TableRow>
               <TableCell className="font-medium">Total</TableCell>
               <TableCell className="text-right font-medium">
-                {formatCurrency(actualRevenueTotal)}
+                {formatCurrency(salesData?.totalActual || 0)}
+              </TableCell>
+              <TableCell className="text-right font-medium">-</TableCell>
+              <TableCell className="text-right font-medium">
+                {formatCurrency(salesData?.totalPotonganAmount || 0)}
               </TableCell>
             </TableRow>
           </TableBody>
         </Table>
+        
+        {/* Outlet + Region Table */}
+        {salesData?.byOutletRegion && Object.keys(salesData.byOutletRegion).length > 0 && (
+          <div className="mt-4">
+            <h3 className="font-medium mb-2">By Outlet + Region</h3>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Outlet + Region</TableHead>
+                  <TableHead className="text-right">Revenue</TableHead>
+                  <TableHead className="text-right">Potongan %</TableHead>
+                  <TableHead className="text-right">Jumlah Potongan</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {Object.entries(salesData.byOutletRegion).map(([outletRegion, data]) => (
+                  <TableRow key={outletRegion}>
+                    <TableCell>{outletRegion}</TableCell>
+                    <TableCell className="text-right">{formatCurrency(data.actual)}</TableCell>
+                    <TableCell className="text-right">
+                      {data.potonganPct !== null && data.potonganPct > 0 ? `${data.potonganPct}%` : "-"}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {data.potonganAmount > 0 ? formatCurrency(data.potonganAmount) : "-"}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
       </section>
 
       <section className="space-y-3">
@@ -404,10 +614,7 @@ export default function FinancePlanPage() {
           <div className="space-y-1">
             <Label>Tambah Plan Pengeluaran</Label>
             <div className="flex flex-wrap items-center gap-3">
-              <Select
-                value={activeCategory ?? ""}
-                onValueChange={(value) => setActiveCategory(value as FinanceCategory)}
-              >
+              <Select value={activeCategory ?? ""} onValueChange={(value) => setActiveCategory(value as FinanceCategory)}>
                 <SelectTrigger className="w-56">
                   <SelectValue placeholder="Pilih kategori" />
                 </SelectTrigger>
@@ -460,13 +667,15 @@ export default function FinancePlanPage() {
                       variant="secondary"
                       size="sm"
                       onClick={() => setActiveCategory(entry.category)}
+                      type="button"
                     >
                       Edit
                     </Button>
                     <Button
-                      variant="destructive"
+                      variant="ghost"
                       size="sm"
                       onClick={() => handleRemoveCategory(entry.category)}
+                      type="button"
                     >
                       Hapus
                     </Button>
@@ -474,14 +683,13 @@ export default function FinancePlanPage() {
                 </TableCell>
               </TableRow>
             ))}
-            <TableRow>
-              <TableCell className="font-semibold">Total Plan</TableCell>
-              <TableCell />
-              <TableCell className="text-right font-semibold">
-                {formatCurrency(totalDraftAmount)}
-              </TableCell>
-              <TableCell />
-            </TableRow>
+            {draftEntriesList.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={4} className="text-center text-sm text-gray-500">
+                  Belum ada kategori plan
+                </TableCell>
+              </TableRow>
+            )}
           </TableBody>
         </Table>
       </section>
@@ -510,6 +718,39 @@ export default function FinancePlanPage() {
       </section>
 
       <section className="space-y-3">
+        <h2 className="font-semibold">Total Omset Diterima (Order status PAID)</h2>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Outlet</TableHead>
+              <TableHead className="text-right">Jumlah</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {(metrics?.totalOmsetPaidByOutlet || []).map((item) => (
+              <TableRow key={item.outlet}>
+                <TableCell>{item.outlet}</TableCell>
+                <TableCell className="text-right">{formatCurrency(item.amount)}</TableCell>
+              </TableRow>
+            ))}
+            {(!metrics || (metrics.totalOmsetPaidByOutlet || []).length === 0) && (
+              <TableRow>
+                <TableCell colSpan={2} className="text-center text-sm text-gray-500">
+                  Tidak ada omset diterima
+                </TableCell>
+              </TableRow>
+            )}
+            <TableRow>
+              <TableCell className="font-medium">Total</TableCell>
+              <TableCell className="text-right font-medium">
+                {formatCurrency(metrics?.totalOmsetPaid || 0)}
+              </TableCell>
+            </TableRow>
+          </TableBody>
+        </Table>
+      </section>
+
+      <section className="space-y-3">
         <h2 className="font-semibold">Dana Tertahan (Order status NOT PAID)</h2>
         <Table>
           <TableHeader>
@@ -520,10 +761,22 @@ export default function FinancePlanPage() {
           </TableHeader>
           <TableBody>
             {(metrics?.danaTertahan || []).map((item) => (
-              <TableRow key={item.outlet}>
-                <TableCell>{item.outlet}</TableCell>
-                <TableCell className="text-right">{formatCurrency(item.amount)}</TableCell>
-              </TableRow>
+              <Fragment key={`dana-${item.outlet}`}>
+                <TableRow key={item.outlet}>
+                  <TableCell className="font-medium">{item.outlet}</TableCell>
+                  <TableCell className="text-right font-medium">{formatCurrency(item.amount)}</TableCell>
+                </TableRow>
+                {/* Details rows */}
+                {(metrics?.danaTertahanDetails || [])
+                  .filter((d) => d.outlet === item.outlet)
+                  .flatMap((d) => d.entries)
+                  .map((entry, idx) => (
+                    <TableRow key={`${item.outlet}-detail-${idx}`}>
+                      <TableCell className="pl-6 text-sm text-gray-700">{entry.customer || '-'}</TableCell>
+                      <TableCell className="text-right text-sm text-gray-700">{formatCurrency(entry.amount)}</TableCell>
+                    </TableRow>
+                  ))}
+              </Fragment>
             ))}
             {(!metrics || (metrics.danaTertahan || []).length === 0) && (
               <TableRow>
@@ -532,12 +785,18 @@ export default function FinancePlanPage() {
                 </TableCell>
               </TableRow>
             )}
+            <TableRow>
+              <TableCell className="font-medium">Total</TableCell>
+              <TableCell className="text-right font-medium">
+                {formatCurrency(metrics?.danaTertahanTotal || 0)}
+              </TableCell>
+            </TableRow>
           </TableBody>
         </Table>
       </section>
 
       <div className="flex justify-end">
-        <Button onClick={handleSavePlan} className="px-6">
+        <Button onClick={handleSavePlan} className="px-6" disabled={!selectedWeek}>
           Simpan Plan
         </Button>
       </div>
@@ -554,6 +813,7 @@ export default function FinancePlanPage() {
     </div>
   );
 }
+
 
 function PlanEntryDetails({ category, data }: { category: FinanceCategory; data: any }) {
   if (!data) return <span className="text-sm text-gray-500">-</span>;

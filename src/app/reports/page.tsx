@@ -1,16 +1,16 @@
 "use client";
-import { useEffect, useState } from "react";
-import { Input } from "../../components/ui/input";
+import { useCallback, useEffect, useState } from "react";
 import { Label } from "../../components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import { Button } from "../../components/ui/button";
 import { DateTimePicker } from "../../components/ui/date-picker";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui/table";
+import { Badge } from "../../components/ui/badge";
 import { useAuth } from "../providers";
 import { getStartOfDayJakarta, getEndOfDayJakarta } from "../../lib/timezone";
 
 export default function ReportsPage() {
-  const { username } = useAuth();
+  const { user } = useAuth();
   const [inv, setInv] = useState<any>(null);
   const [sales, setSales] = useState<any>(null);
   const [menuItems, setMenuItems] = useState<any>(null);
@@ -21,7 +21,7 @@ export default function ReportsPage() {
   const [sendingWhatsApp, setSendingWhatsApp] = useState(false);
   const [whatsappMessage, setWhatsappMessage] = useState<string | null>(null);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     const qs: string[] = [];
     if (from) {
       const fromJakarta = getStartOfDayJakarta(from);
@@ -40,9 +40,9 @@ export default function ReportsPage() {
     setInv(a);
     setSales(b);
     setMenuItems(c);
-  };
+  }, [from, to]);
 
-  const loadMenuItems = async () => {
+  const loadMenuItems = useCallback(async () => {
     const qs: string[] = [];
     if (from) {
       const fromJakarta = getStartOfDayJakarta(from);
@@ -58,7 +58,7 @@ export default function ReportsPage() {
     const response = await fetch(`/api/reports/menu-items${query}`);
     const data = await response.json();
     setMenuItems(data);
-  };
+  }, [from, to, menuLocation, menuOutlet]);
 
   const sendWhatsAppReport = async () => {
     try {
@@ -84,7 +84,7 @@ export default function ReportsPage() {
         setWhatsappMessage("❌ Gagal mengirim report: " + (data.error || "Unknown error"));
         setTimeout(() => setWhatsappMessage(null), 5000);
       }
-    } catch (error) {
+    } catch {
       setWhatsappMessage("❌ Error mengirim report ke WhatsApp");
       setTimeout(() => setWhatsappMessage(null), 5000);
     } finally {
@@ -93,18 +93,18 @@ export default function ReportsPage() {
   };
 
   useEffect(() => { 
-    if (username === "Admin" || username === "Manager") {
+    if (user?.role === "Admin" || user?.role === "Manager") {
       load(); 
     }
-  }, [from, to, username]);
+  }, [load, user]);
   
   useEffect(() => { 
-    if (username === "Admin" || username === "Manager") {
+    if (user?.role === "Admin" || user?.role === "Manager") {
       loadMenuItems(); 
     }
-  }, [menuLocation, menuOutlet, username]);
+  }, [loadMenuItems, user]);
 
-  if (username !== "Admin" && username !== "Manager") {
+  if (user?.role !== "Admin" && user?.role !== "Manager") {
     return (
       <main className="p-6">
         <div className="text-sm text-gray-600">Akses ditolak.</div>
@@ -354,9 +354,9 @@ export default function ReportsPage() {
                     <TableCell>
                       <div className="flex flex-wrap gap-1">
                         {item.outlets.map((outlet: string) => (
-                          <span key={outlet} className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded">
+                          <Badge key={outlet} color="gray" className="text-xs">
                             {outlet}
-                          </span>
+                          </Badge>
                         ))}
                       </div>
                     </TableCell>
@@ -397,18 +397,18 @@ export default function ReportsPage() {
                       <TableCell>
                         <div className="flex flex-wrap gap-1">
                           {item.outlets.map((outlet: string) => (
-                            <span key={outlet} className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded">
+                            <Badge key={outlet} color="gray" className="text-xs">
                               {outlet}
-                            </span>
+                            </Badge>
                           ))}
                         </div>
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap gap-1">
                           {item.locations.map((location: string) => (
-                            <span key={location} className="px-2 py-1 bg-green-100 text-green-800 text-xs rounded">
+                            <Badge key={location} color="green" className="text-xs">
                               {location}
-                            </span>
+                            </Badge>
                           ))}
                         </div>
                       </TableCell>
@@ -423,5 +423,3 @@ export default function ReportsPage() {
     </main>
   );
 }
-
-

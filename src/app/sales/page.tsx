@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
@@ -16,15 +16,18 @@ import { useAuth, lockedLocation } from "../providers";
 
 function getInitialLocation(): string {
   if (typeof window !== "undefined") {
-    const u = localStorage.getItem("mf_username");
-    const locked = lockedLocation((u as any) || null);
-    if (locked) return locked;
+    const raw = localStorage.getItem("mf_user");
+    try {
+      const parsed = raw ? JSON.parse(raw) : null;
+      const locked = lockedLocation(parsed);
+      if (locked) return locked;
+    } catch {}
   }
   return "Bandung";
 }
 
 export default function SalesPage() {
-  const { username } = useAuth();
+  const { user } = useAuth();
   const [sales, setSales] = useState<Sale[]>([]);
   const [outlet, setOutlet] = useState("WhatsApp");
   const [location, setLocation] = useState<string>(() => getInitialLocation());
@@ -50,7 +53,7 @@ export default function SalesPage() {
   const [total, setTotal] = useState(0);
   const [from, setFrom] = useState<Date | undefined>(undefined);
   const [to, setTo] = useState<Date | undefined>(undefined);
-  const loadSales = async () => {
+  const loadSales = useCallback(async () => {
     const params = new URLSearchParams({ page: String(page), pageSize: "10" });
     if (from) {
       const fromJakarta = getStartOfDayJakarta(from);
@@ -64,15 +67,15 @@ export default function SalesPage() {
     const data = await res.json();
     setSales(data.rows || []);
     setTotal(data.total || 0);
-  };
+  }, [page, from, to]);
 
-  useEffect(() => { loadSales(); }, [page, from, to]);
+  useEffect(() => { loadSales(); }, [loadSales]);
 
   // lock location for Bandung/Jakarta
   useEffect(() => {
-    const locked = lockedLocation(username);
+    const locked = lockedLocation(user);
     if (locked) setLocation(locked);
-  }, [username]);
+  }, [user]);
 
   const openModal = () => {
     setForm({
@@ -215,7 +218,7 @@ export default function SalesPage() {
         </div>
         <div className="flex flex-col gap-1">
           <Label>Location</Label>
-          <Select value={location} onValueChange={(v) => setLocation(v)} disabled={Boolean(lockedLocation(username))}>
+          <Select value={location} onValueChange={(v) => setLocation(v)} disabled={Boolean(lockedLocation(user))}>
             <SelectTrigger>
               <SelectValue placeholder="Pilih Lokasi" />
             </SelectTrigger>
@@ -441,7 +444,7 @@ export default function SalesPage() {
                 <TableCell className="text-center">
                   <div className="flex gap-3 justify-center">
                     <Button variant="link" className="p-0 h-auto" onClick={() => openEdit(s.id)}>Edit</Button>
-                    {username === "Admin" && (
+                    {user?.role === "Admin" && (
                       <Button variant="link" className="text-red-600 p-0 h-auto" onClick={() => deleteSale(s.id)}>Delete</Button>
                     )}
                   </div>
@@ -459,13 +462,19 @@ export default function SalesPage() {
         </div>
       </div>
 
-      {editModal.open && editModal.sale && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-md w-full max-w-3xl p-4 space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="font-medium">Edit Sale #{editModal.sale.id} - {editModal.sale.outlet} ({editModal.sale.location})</div>
-              <button className="text-gray-600" onClick={() => setEditModal({ open: false, sale: null, items: [] })}>Close</button>
-            </div>
+      <Dialog open={editModal.open} onOpenChange={(open) => { if (!open) setEditModal({ open: false, sale: null, items: [] }); }}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>
+              {editModal.sale ? (
+                <>Edit Sale #{editModal.sale.id} - {editModal.sale.outlet} ({editModal.sale.location})</>
+              ) : (
+                <>Edit Sale</>
+              )}
+            </DialogTitle>
+          </DialogHeader>
+          {editModal.sale && (
+            <div className="space-y-4">
             <div className="flex flex-col gap-1">
               <Label>Search Barcode</Label>
               <Input placeholder="Cari barcode" value={editSearch} onChange={(e) => setEditSearch(e.target.value)} />
@@ -473,22 +482,38 @@ export default function SalesPage() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div className="flex flex-col gap-1">
                 <Label>Outlet</Label>
-                <select className="border rounded p-2" value={editModal.sale.outlet} onChange={(e) => setEditModal((prev) => prev.sale ? { ...prev, sale: { ...prev.sale, outlet: e.target.value } } : prev)}>
-                  <option>Tokopedia</option>
-                  <option>Shopee</option>
-                  <option>WhatsApp</option>
-                  <option>Cafe</option>
-                  <option>Wholesale</option>
-                  <option>Complain</option>
-                  <option>Free</option>
-                </select>
+                <Select
+                  value={editModal.sale.outlet}
+                  onValueChange={(v) => setEditModal((prev) => (prev.sale ? { ...prev, sale: { ...prev.sale, outlet: v } } : prev))}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Pilih Outlet" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Tokopedia">Tokopedia</SelectItem>
+                    <SelectItem value="Shopee">Shopee</SelectItem>
+                    <SelectItem value="WhatsApp">WhatsApp</SelectItem>
+                    <SelectItem value="Cafe">Cafe</SelectItem>
+                    <SelectItem value="Wholesale">Wholesale</SelectItem>
+                    <SelectItem value="Complain">Complain</SelectItem>
+                    <SelectItem value="Free">Free</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div className="flex flex-col gap-1">
                 <Label>Location</Label>
-                <select className="border rounded p-2" value={editModal.sale.location} onChange={(e) => setEditModal((prev) => prev.sale ? { ...prev, sale: { ...prev.sale, location: e.target.value } } : prev)}>
-                  <option>Bandung</option>
-                  <option>Jakarta</option>
-                </select>
+                <Select
+                  value={editModal.sale.location}
+                  onValueChange={(v) => setEditModal((prev) => (prev.sale ? { ...prev, sale: { ...prev.sale, location: v } } : prev))}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Pilih Lokasi" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Bandung">Bandung</SelectItem>
+                    <SelectItem value="Jakarta">Jakarta</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               {(editModal.sale.outlet === "Tokopedia" || editModal.sale.outlet === "Shopee" || editModal.sale.outlet === "WhatsApp" || editModal.sale.outlet === "Free" || editModal.sale.outlet === "Wholesale" || editModal.sale.outlet === "Complain" || editModal.sale.outlet === "Cafe") && (
                 <div className="flex flex-col gap-1">
@@ -498,14 +523,31 @@ export default function SalesPage() {
               )}
               <div className="flex flex-col gap-1">
                 <Label>Status</Label>
-                <select className="border rounded p-2" value={editModal.sale.status} onChange={(e) => setEditModal((prev) => prev.sale ? { ...prev, sale: { ...prev.sale, status: e.target.value } } : prev)}>
-                  {(() => {
-                    const key = String(editModal.sale.outlet || "").toLowerCase();
-                    const options = ["ordered", "shipping", "cancel", "refund"];
-                    if (key === "cafe") options.push("Display", "Waste", "Terjual");
-                    return options.map((o) => <option key={o} value={o}>{o}</option>);
-                  })()}
-                </select>
+                <Select
+                  value={editModal.sale.status}
+                  onValueChange={(v) => setEditModal((prev) => (prev.sale ? { ...prev, sale: { ...prev.sale, status: v } } : prev))}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Pilih status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(() => {
+                      const key = String(editModal.sale.outlet || "").toLowerCase();
+                      const base = ["ordered", "shipping", "cancel", "refund"] as const;
+                      const cafe = ["Display", "Waste", "Terjual"] as const;
+                      return (
+                        <>
+                          {base.map((o) => (
+                            <SelectItem key={o} value={o}>{o}</SelectItem>
+                          ))}
+                          {key === "cafe" && cafe.map((o) => (
+                            <SelectItem key={o} value={o}>{o}</SelectItem>
+                          ))}
+                        </>
+                      );
+                    })()}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="flex flex-col gap-1">
                 <Label>Order Date</Label>
@@ -612,25 +654,32 @@ export default function SalesPage() {
                       <TableCell className="text-right">{displayPrice.toLocaleString("id-ID")}</TableCell>
                     {editModal.sale.outlet === "Cafe" && (
                       <TableCell>
-                        <select className="border rounded p-1" defaultValue={it.status || ""} onChange={(e) => updateItem(it.id, { status: e.target.value || null })}>
-                          <option value="">-</option>
-                          <option>Display</option>
-                          <option>Waste</option>
-                          <option>Terjual</option>
-                        </select>
+                        <Select
+                          value={it.status || ""}
+                          onValueChange={(v) => updateItem(it.id, { status: v || null })}
+                        >
+                          <SelectTrigger className="w-[140px]">
+                            <SelectValue placeholder="-" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="">-</SelectItem>
+                            <SelectItem value="Display">Display</SelectItem>
+                            <SelectItem value="Waste">Waste</SelectItem>
+                            <SelectItem value="Terjual">Terjual</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </TableCell>
                     )}
-                      <TableCell className="text-center">{username === "Admin" && (<Button variant="link" className="text-red-600 p-0 h-auto" onClick={() => removeItem(it.id)}>Delete</Button>)}</TableCell>
+                      <TableCell className="text-center">{user?.role === "Admin" && (<Button variant="link" className="text-red-600 p-0 h-auto" onClick={() => removeItem(it.id)}>Delete</Button>)}</TableCell>
                     </TableRow>
                   );
                 })}
               </TableBody>
             </Table>
-          </div>
-        </div>
-      )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </main>
   );
 }
-
-

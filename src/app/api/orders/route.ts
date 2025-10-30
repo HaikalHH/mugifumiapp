@@ -18,8 +18,9 @@ export async function GET(req: NextRequest) {
     const pageSize = Number(searchParams.get("pageSize") || "10");
     const from = searchParams.get("from");
     const to = searchParams.get("to");
+    const search = searchParams.get("search");
     
-    logRouteStart('orders-list', { page, pageSize, from, to });
+    logRouteStart('orders-list', { page, pageSize, from, to, search });
 
     const where: any = {};
     if (from || to) {
@@ -32,6 +33,32 @@ export async function GET(req: NextRequest) {
         // Frontend already sends Asia/Jakarta timezone converted to UTC
         where.orderDate.lte = new Date(to);
       }
+    }
+
+    // Add search functionality
+    if (search && search.trim()) {
+      const searchTerm = search.trim();
+      const searchConditions = [];
+      
+      // Only search by ID if the search term is a valid integer and not too large
+      const numericSearch = Number(searchTerm);
+      if (!Number.isNaN(numericSearch) && numericSearch > 0 && numericSearch <= 2147483647) {
+        searchConditions.push({ id: { equals: numericSearch } });
+      }
+      
+      // Add text-based searches
+      searchConditions.push(
+        // Search by outlet (case insensitive)
+        { outlet: { contains: searchTerm, mode: 'insensitive' } },
+        // Search by location (case insensitive)
+        { location: { contains: searchTerm, mode: 'insensitive' } },
+        // Search by customer (case insensitive)
+        { customer: { contains: searchTerm, mode: 'insensitive' } },
+        // Search by status (case insensitive)
+        { status: { contains: searchTerm, mode: 'insensitive' } }
+      );
+      
+      where.OR = searchConditions;
     }
 
     const rows = await withRetry(async () => {

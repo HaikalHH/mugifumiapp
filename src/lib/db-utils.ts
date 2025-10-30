@@ -1,5 +1,3 @@
-import { prisma } from './prisma';
-
 /**
  * Retry wrapper for database operations to handle intermittent connection issues
  */
@@ -10,10 +8,11 @@ export async function withRetry<T>(
 ): Promise<T> {
   try {
     return await fn();
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error(`Database error in ${routeName}:`, error);
     
-    if (retries > 0 && error.message?.includes('Prisma')) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (retries > 0 && message.includes('Prisma')) {
       console.log(`Retrying database query in ${routeName}... ${retries} attempts left`);
       await new Promise(resolve => setTimeout(resolve, 1000));
       return withRetry(fn, retries - 1, routeName);
@@ -25,23 +24,21 @@ export async function withRetry<T>(
 /**
  * Standard error response for API routes
  */
-export function createErrorResponse(
-  action: string, 
-  error: any, 
-  status = 500
-) {
+export function createErrorResponse(action: string, error: unknown) {
   console.error(`API Error in ${action}:`, error);
   
   return {
     error: `Failed to ${action}`,
-    details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    details: process.env.NODE_ENV === 'development'
+      ? (error instanceof Error ? error.message : String(error))
+      : undefined
   };
 }
 
 /**
  * Log route execution for debugging
  */
-export function logRouteStart(routeName: string, params?: any) {
+export function logRouteStart(routeName: string, params?: unknown) {
   console.log(`Starting ${routeName} request...`, params ? { params } : '');
 }
 

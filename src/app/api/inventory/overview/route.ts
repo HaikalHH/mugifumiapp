@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { prisma } from "../../../../lib/prisma";
-import { withRetry, createErrorResponse, logRouteStart, logRouteComplete } from "../../../../lib/db-utils";
+import {
+  withRetry,
+  createErrorResponse,
+  logRouteStart,
+  logRouteComplete,
+} from "../../../../lib/db-utils";
 
 interface StockInfo {
   total: number;
@@ -10,53 +15,65 @@ interface StockInfo {
 
 export async function GET() {
   try {
-    logRouteStart('inventory-overview');
+    logRouteStart("inventory-overview");
 
     // Get ALL products first (not just those with inventory)
-    const products = await withRetry(async () => {
-      return prisma.product.findMany({ 
-        select: { 
-          id: true,
-          code: true, 
-          name: true 
-        },
-        orderBy: { id: 'asc' }
-      });
-    }, 2, 'inventory-overview-products');
+    const products = await withRetry(
+      async () => {
+        return prisma.product.findMany({
+          select: {
+            id: true,
+            code: true,
+            name: true,
+          },
+          orderBy: { id: "asc" },
+        });
+      },
+      2,
+      "inventory-overview-products",
+    );
 
     // Then get inventory items for counting (total stock)
-    const items = await withRetry(async () => {
-      return prisma.inventory.findMany({
-        where: { status: "READY" },
-        select: { 
-          id: true,
-          location: true, 
-          productId: true 
-        },
-        orderBy: { id: 'asc' }
-      });
-    }, 2, 'inventory-overview-items');
+    const items = await withRetry(
+      async () => {
+        return prisma.inventory.findMany({
+          where: { status: "READY" },
+          select: {
+            id: true,
+            location: true,
+            productId: true,
+          },
+          orderBy: { id: "asc" },
+        });
+      },
+      2,
+      "inventory-overview-items",
+    );
 
     // Fetch order items for orders that should contribute to reserved stock
-    const orders = await withRetry(async () => {
-      return prisma.order.findMany({
-        where: {
-          deliveries: {
-            none: {}
+    const orders = await withRetry(
+      async () => {
+        return prisma.order.findMany({
+          where: {
+            deliveries: {
+              none: {},
+            },
           },
-        },
-        select: {
-          id: true,
-          location: true,
-          items: {
-            select: {
-              productId: true,
-              quantity: true,
-            }
-          }
-        }
-      });
-    }, 2, 'inventory-overview-openorders');
+          select: {
+            id: true,
+            location: true,
+            items: {
+              select: {
+                productId: true,
+                quantity: true,
+              },
+            },
+          },
+        });
+      },
+      2,
+      "inventory-overview-openorders",
+    );
 
     // Create product map for efficient lookup
     const productMap = new Map(products.map(p => [p.id, p]));
@@ -146,12 +163,11 @@ export async function GET() {
       }
     }
 
-    logRouteComplete('inventory-overview', items.length);
+    logRouteComplete("inventory-overview", items.length);
     return NextResponse.json({ byLocation, all });
   } catch (error) {
-    return NextResponse.json(
-      createErrorResponse("get inventory overview", error), 
-      { status: 500 }
-    );
+    return NextResponse.json(createErrorResponse("get inventory overview", error), {
+      status: 500,
+    });
   }
 }

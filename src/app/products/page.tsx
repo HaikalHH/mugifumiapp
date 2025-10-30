@@ -1,8 +1,10 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "../../components/ui/dialog";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui/table";
 import { useAuth } from "../providers";
 
 type Product = {
@@ -15,29 +17,19 @@ type Product = {
 };
 
 export default function ProductsPage() {
-  const { username } = useAuth();
+  const { user } = useAuth();
   const [items, setItems] = useState<Product[]>([]);
   const [form, setForm] = useState({ code: "", name: "", price: 0, hppPct: 0.3 });
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [editForm, setEditForm] = useState({ name: "", price: 0, hppPct: 0.3 });
 
-  if (username === "Bandung" || username === "Jakarta") {
-    return (
-      <main className="p-6">
-        <div className="text-sm text-gray-600">Akses ditolak.</div>
-      </main>
-    );
-  }
-
-  const load = async () => {
+  const load = useCallback(async () => {
     const res = await fetch("/api/products");
     const data = await res.json();
     setItems(data);
-  };
-
-  useEffect(() => {
-    load();
   }, []);
+
+  useEffect(() => { load(); }, [load]);
 
   const create = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -91,6 +83,14 @@ export default function ProductsPage() {
     }
   };
 
+  if (user?.role === "Bandung" || user?.role === "Jakarta") {
+    return (
+      <main className="p-6">
+        <div className="text-sm text-gray-600">Akses ditolak.</div>
+      </main>
+    );
+  }
+
   return (
     <main className="p-6 space-y-6">
       <h1 className="text-xl font-semibold">Products</h1>
@@ -117,121 +117,92 @@ export default function ProductsPage() {
         </div>
       </form>
 
-      <table className="w-full text-sm border">
-        <thead className="bg-gray-50">
-          <tr>
-            <th className="p-2 text-left">Code</th>
-            <th className="p-2 text-left">Name</th>
-            <th className="p-2 text-right">Price</th>
-            <th className="p-2 text-right">HPP %</th>
-            <th className="p-2 text-right">HPP Value</th>
-            <th className="p-2">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead className="text-left">Code</TableHead>
+            <TableHead className="text-left">Name</TableHead>
+            <TableHead className="text-right">Price</TableHead>
+            <TableHead className="text-right">HPP %</TableHead>
+            <TableHead className="text-right">HPP Value</TableHead>
+            <TableHead className="text-center">Actions</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {items.map((p) => (
-            <tr key={p.id} className="border-t">
-              <td className="p-2">{p.code}</td>
-              <td className="p-2">{p.name}</td>
-              <td className="p-2 text-right">{p.price.toLocaleString("id-ID")}</td>
-              <td className="p-2 text-right">{p.hppPct}</td>
-              <td className="p-2 text-right">{p.hppValue.toLocaleString("id-ID")}</td>
-              <td className="p-2 text-center">
+            <TableRow key={p.id}>
+              <TableCell>{p.code}</TableCell>
+              <TableCell>{p.name}</TableCell>
+              <TableCell className="text-right">{p.price.toLocaleString("id-ID")}</TableCell>
+              <TableCell className="text-right">{p.hppPct}</TableCell>
+              <TableCell className="text-right">{p.hppValue.toLocaleString("id-ID")}</TableCell>
+              <TableCell className="text-center">
                 <div className="flex gap-2 justify-center">
-                  <button 
-                    onClick={() => startEdit(p)} 
-                    className="text-blue-600 hover:underline text-sm"
-                  >
+                  <Button variant="link" className="p-0 h-auto" onClick={() => startEdit(p)}>
                     Edit
-                  </button>
-                  <button 
-                    onClick={() => remove(p.id)} 
-                    className="text-red-600 hover:underline text-sm"
-                  >
+                  </Button>
+                  <Button variant="link" className="text-red-600 p-0 h-auto" onClick={() => remove(p.id)}>
                     Delete
-                  </button>
+                  </Button>
                 </div>
-              </td>
-            </tr>
+              </TableCell>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
 
-      {/* Edit Modal */}
-      {editingProduct && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-md w-full max-w-md p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold">Edit Product</h2>
-              <button 
-                onClick={cancelEdit}
-                className="text-gray-600 hover:text-gray-800 text-xl"
-              >
-                ×
-              </button>
+      {/* Edit Modal (shadcn Dialog) */}
+      <Dialog open={Boolean(editingProduct)} onOpenChange={(open) => { if (!open) cancelEdit(); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Product</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={update} className="space-y-4">
+            <div className="flex flex-col gap-1">
+              <Label>Product Code</Label>
+              <Input value={editingProduct?.code || ""} disabled className="bg-gray-100" />
+              <p className="text-xs text-gray-500">Product code cannot be changed</p>
             </div>
-            
-            <form onSubmit={update} className="space-y-4">
-              <div className="flex flex-col gap-1">
-                <Label>Product Code</Label>
-                <Input 
-                  value={editingProduct.code} 
-                  disabled 
-                  className="bg-gray-100"
-                />
-                <p className="text-xs text-gray-500">Product code cannot be changed</p>
+            <div className="flex flex-col gap-1">
+              <Label>Name</Label>
+              <Input
+                placeholder="Product name"
+                value={editForm.name}
+                onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                required
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <Label>Price (Rp)</Label>
+              <Input
+                type="number"
+                placeholder="e.g. 35000"
+                value={editForm.price}
+                onChange={(e) => setEditForm({ ...editForm, price: Number(e.target.value) })}
+                required
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <Label>HPP % (0-1)</Label>
+              <Input
+                type="number"
+                step="0.01"
+                placeholder="e.g. 0.3"
+                value={editForm.hppPct}
+                onChange={(e) => setEditForm({ ...editForm, hppPct: Number(e.target.value) })}
+                required
+              />
+              <div className="text-sm text-gray-600">
+                HPP Value: Rp {Math.round(editForm.price * editForm.hppPct).toLocaleString("id-ID")}
               </div>
-              
-              <div className="flex flex-col gap-1">
-                <Label>Name</Label>
-                <Input 
-                  placeholder="Product name" 
-                  value={editForm.name} 
-                  onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                  required
-                />
-              </div>
-              
-              <div className="flex flex-col gap-1">
-                <Label>Price (Rp)</Label>
-                <Input 
-                  type="number" 
-                  placeholder="e.g. 35000" 
-                  value={editForm.price} 
-                  onChange={(e) => setEditForm({ ...editForm, price: Number(e.target.value) })}
-                  required
-                />
-              </div>
-              
-              <div className="flex flex-col gap-1">
-                <Label>HPP % (0-1)</Label>
-                <Input 
-                  type="number" 
-                  step="0.01" 
-                  placeholder="e.g. 0.3" 
-                  value={editForm.hppPct} 
-                  onChange={(e) => setEditForm({ ...editForm, hppPct: Number(e.target.value) })}
-                  required
-                />
-                <div className="text-sm text-gray-600">
-                  HPP Value: Rp {Math.round(editForm.price * editForm.hppPct).toLocaleString("id-ID")}
-                </div>
-              </div>
-              
-              <div className="flex gap-2 pt-4">
-                <Button type="button" variant="outline" onClick={cancelEdit} className="flex-1">
-                  Cancel
-                </Button>
-                <Button type="submit" className="flex-1">
-                  Update Product
-                </Button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={cancelEdit}>Cancel</Button>
+              <Button type="submit">Update Product</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </main>
   );
 }
-
-
