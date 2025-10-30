@@ -481,7 +481,7 @@ export default function OrdersPage() {
           />
         </div>
       </div>
-      <div className="flex gap-3">
+      <div className="flex flex-wrap gap-3">
         <Button onClick={openModal}>Create Order</Button>
         <Button variant="outline" onClick={() => {
           setFrom(undefined);
@@ -720,16 +720,17 @@ export default function OrdersPage() {
 
       <div>
         <h2 className="font-medium mb-2">Recent Orders</h2>
-        <Table>
+        <div className="overflow-x-auto">
+        <Table className="min-w-[720px] md:min-w-0">
           <TableHeader>
             <TableRow>
               <TableHead className="text-left">ID</TableHead>
               <TableHead className="text-left">Outlet</TableHead>
-              <TableHead className="text-left">Location</TableHead>
-              <TableHead className="text-left">Customer</TableHead>
+              <TableHead className="text-left hidden md:table-cell">Location</TableHead>
+              <TableHead className="text-left hidden md:table-cell">Customer</TableHead>
               <TableHead className="text-left">Order Date</TableHead>
               <TableHead className="text-left">Status</TableHead>
-              <TableHead className="text-left">Delivery</TableHead>
+              <TableHead className="text-left hidden md:table-cell">Delivery</TableHead>
               <TableHead className="text-right">Total</TableHead>
               <TableHead className="text-center">Actions</TableHead>
             </TableRow>
@@ -752,15 +753,15 @@ export default function OrdersPage() {
                     )}
                   </div>
                 </TableCell>
-                <TableCell>{order.location}</TableCell>
-                <TableCell>{order.customer || "-"}</TableCell>
+                <TableCell className="hidden md:table-cell">{order.location}</TableCell>
+                <TableCell className="hidden md:table-cell">{order.customer || "-"}</TableCell>
                 <TableCell>{new Date(order.orderDate).toLocaleDateString()}</TableCell>
                 <TableCell>
                   <Badge color={getStatusBadgeColor(statusLabel)}>
                     {statusLabel}
                   </Badge>
                 </TableCell>
-                <TableCell>
+                <TableCell className="hidden md:table-cell">
                   <Badge color={
                     order.deliveries && order.deliveries.length > 0 
                       ? (order.deliveries[0].status === "delivered" ? "green" : "gray")
@@ -807,6 +808,7 @@ export default function OrdersPage() {
             })}
           </TableBody>
         </Table>
+        </div>
         <div className="flex items-center justify-between mt-2">
           <div className="text-sm text-gray-600">Page {page} / {Math.max(1, Math.ceil(total / 10))}</div>
           <div className="flex gap-2">
