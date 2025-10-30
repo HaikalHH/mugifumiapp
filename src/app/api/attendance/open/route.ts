@@ -11,8 +11,7 @@ export async function GET(req: Request) {
       orderBy: { clockInAt: "desc" },
     });
     return NextResponse.json({ open });
-  } catch (error) {
+  } catch {
     return NextResponse.json({ error: "Gagal ambil attendance" }, { status: 500 });
   }
 }
-

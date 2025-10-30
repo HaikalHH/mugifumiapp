@@ -13,7 +13,7 @@ export async function POST(req: Request, context: { params: Promise<{ id: string
       data: { status, approvedById: adminId ?? null, approvedAt: new Date() },
     });
     return NextResponse.json(updated);
-  } catch (error) {
+  } catch {
     return NextResponse.json({ error: "Gagal update lembur" }, { status: 500 });
   }
 }

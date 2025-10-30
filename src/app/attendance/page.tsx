@@ -2,12 +2,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth, hasAccess } from "../providers";
 import { Button } from "../../components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui/table";
 
 export default function AttendancePage() {
   const { user } = useAuth();
-  const [open, setOpen] = useState(false);
   const [records, setRecords] = useState<any[]>([]);
   const [totals, setTotals] = useState<{ workedMinutes: number; latenessMinutes: number; hourlyRate: number; latenessPenalty: number; overtimeMinutes?: number } | null>(null);
   const [overtime, setOvertime] = useState<Array<{ id: number; startAt: string; endAt: string; minutes: number }>>([]);
@@ -108,7 +106,6 @@ export default function AttendancePage() {
     if (!user) return;
     const res = await fetch("/api/attendance/clock-in", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: user.id }) });
     if (res.ok) {
-      setOpen(false);
       load();
     }
   };
@@ -135,7 +132,7 @@ export default function AttendancePage() {
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">Attendance</h1>
         <Button
-          onClick={() => setOpen(true)}
+          onClick={handleClockIn}
           disabled={hasToday || beforeStart || afterEnd}
           title={
             hasToday
@@ -149,6 +146,16 @@ export default function AttendancePage() {
         >
           {hasToday ? "Sudah Clock In" : beforeStart ? "Belum Jam Masuk" : afterEnd ? "Sudah Lewat Jam Kerja" : "Clock In"}
         </Button>
+        {(beforeStart && startMinutes != null) && (
+          <div className="ml-3 text-xs text-amber-600">
+            Bisa clock in mulai {String(Math.floor(startMinutes/60)).padStart(2,'0')}:{String(startMinutes%60).padStart(2,'0')} WIB
+          </div>
+        )}
+        {(afterEnd && endMinutes != null) && (
+          <div className="ml-3 text-xs text-amber-600">
+            Sudah lewat jam kerja (hingga {String(Math.floor(endMinutes/60)).padStart(2,'0')}:{String(endMinutes%60).padStart(2,'0')} WIB)
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -224,28 +231,7 @@ export default function AttendancePage() {
         </div>
       )}
 
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Clock In</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div>Waktu akan disimpan dalam UTC dan ditetapkan ke tanggal Jakarta saat ini.</div>
-            {beforeStart && startMinutes != null && (
-              <div className="text-sm text-amber-600">
-                Belum jam masuk. Dapat clock in mulai {String(Math.floor(startMinutes/60)).padStart(2,'0')}:
-                {String(startMinutes%60).padStart(2,'0')} WIB.
-              </div>
-            )}
-            {afterEnd && endMinutes != null && (
-              <div className="text-sm text-amber-600">
-                Sudah lewat jam kerja (hingga {String(Math.floor(endMinutes/60)).padStart(2,'0')}:{String(endMinutes%60).padStart(2,'0')} WIB). Silakan clock in besok.
-              </div>
-            )}
-            <Button onClick={handleClockIn} disabled={beforeStart || afterEnd}>Clock In Now (UTC)</Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* Dialog removed: direct clock-in from header button */}
     </main>
   );
 }

@@ -56,7 +56,7 @@ export async function POST(req: Request) {
       },
     });
     return NextResponse.json(att);
-  } catch (error) {
+  } catch {
     return NextResponse.json({ error: "Gagal clock in" }, { status: 500 });
   }
 }

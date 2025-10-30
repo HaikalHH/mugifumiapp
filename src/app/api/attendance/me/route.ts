@@ -97,7 +97,7 @@ export async function GET(req: Request) {
       overtime,
       totals: { ...totals, overtimeMinutes, hourlyRate, penaltyRate, latenessPenalty },
     });
-  } catch (error) {
+  } catch {
     return NextResponse.json({ error: "Gagal ambil attendance" }, { status: 500 });
   }
 }
