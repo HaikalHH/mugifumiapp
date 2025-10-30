@@ -44,11 +44,14 @@ export async function GET(req: Request) {
       if (!u) continue;
       const user = users.find((x) => x.id === a.userId)!;
       const scheduleStart = user.workStartMinutes ?? 540;
+      const scheduleEnd = user.workEndMinutes ?? 1020;
       const scheduledStartUTC = new Date(a.date.getTime() + scheduleStart * 60000);
+      const scheduledEndUTC = new Date(a.date.getTime() + scheduleEnd * 60000);
       const toleranceMs = 30 * 60 * 1000; // 30 minutes tolerance for lateness
       const effectiveStartUTC = new Date(scheduledStartUTC.getTime() + toleranceMs);
       const late = Math.max(0, Math.round((a.clockInAt.getTime() - effectiveStartUTC.getTime()) / 60000));
-      const worked = a.clockOutAt ? Math.max(0, Math.round((a.clockOutAt.getTime() - a.clockInAt.getTime()) / 60000)) : 0;
+      const endCap = a.clockOutAt ? a.clockOutAt : new Date(Math.min(Date.now(), scheduledEndUTC.getTime()));
+      const worked = Math.max(0, Math.round((endCap.getTime() - a.clockInAt.getTime()) / 60000));
       u.totals.latenessMinutes += late;
       u.totals.workedMinutes += worked;
     }

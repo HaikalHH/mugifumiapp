@@ -23,21 +23,25 @@ export async function POST(req: Request) {
     const now = new Date();
     const dateAnchor = getJakartaDateAnchorUTC(now);
 
-    // Auto-close any open attendance whose scheduled end has passed
-    const openList = await prisma.attendance.findMany({
-      where: { userId: user.id, clockOutAt: null },
-      orderBy: { clockInAt: "asc" },
-    });
-    for (const att of openList) {
-      const endMinutes = user.workEndMinutes ?? 1020; // default 17:00 Jakarta
-      const scheduledEndUTC = new Date(att.date.getTime() + endMinutes * 60 * 1000);
-      if (now.getTime() >= scheduledEndUTC.getTime()) {
-        await prisma.attendance.update({ where: { id: att.id }, data: { clockOutAt: scheduledEndUTC } });
-      }
+    // Allow clock-in only within today's work window [start, end)
+    const startMinutes = user.workStartMinutes ?? 540; // default 09:00
+    const endMinutes = user.workEndMinutes ?? 1020;    // default 17:00
+    const minutesSinceMidnightJakarta = Math.floor((now.getTime() - dateAnchor.getTime()) / 60000);
+    if (minutesSinceMidnightJakarta < startMinutes) {
+      const hh = String(Math.floor(startMinutes / 60)).padStart(2, "0");
+      const mm = String(startMinutes % 60).padStart(2, "0");
+      return NextResponse.json({ error: `Belum jam masuk (mulai ${hh}:${mm} WIB)` }, { status: 400 });
+    }
+    if (minutesSinceMidnightJakarta >= endMinutes) {
+      const eh = String(Math.floor(endMinutes / 60)).padStart(2, "0");
+      const em = String(endMinutes % 60).padStart(2, "0");
+      return NextResponse.json({ error: `Sudah lewat jam kerja (hingga ${eh}:${em} WIB)` }, { status: 400 });
     }
 
-    // Ensure no open attendance for today
-    // Prevent multiple attendance entries for the same Jakarta day (even if already closed)
+    // Tidak perlu auto-close persist. Jika ada record sebelumnya open,
+    // perhitungan attendance akan menganggap jam selesai sesuai jadwal.
+
+    // Ensure only one attendance per Jakarta day
     const todayAny = await prisma.attendance.findFirst({
       where: { userId: user.id, date: dateAnchor },
       orderBy: { clockInAt: "desc" },

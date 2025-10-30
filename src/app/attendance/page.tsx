@@ -13,18 +13,28 @@ export default function AttendancePage() {
   const [overtime, setOvertime] = useState<Array<{ id: number; startAt: string; endAt: string; minutes: number }>>([]);
   const [loading, setLoading] = useState(false);
   const [hasToday, setHasToday] = useState(false);
+  const [beforeStart, setBeforeStart] = useState(false);
+  const [afterEnd, setAfterEnd] = useState(false);
+  const [startMinutes, setStartMinutes] = useState<number | null>(null);
+  const [endMinutes, setEndMinutes] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     if (!user) return;
     setLoading(true);
     const d = new Date();
     const monthStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-    const res = await fetch(`/api/attendance/me?userId=${user.id}&month=${encodeURIComponent(monthStr)}`);
+    const [res, userRes] = await Promise.all([
+      fetch(`/api/attendance/me?userId=${user.id}&month=${encodeURIComponent(monthStr)}`),
+      fetch(`/api/users/${user.id}`),
+    ]);
     const data = await res.json();
+    const userData = userRes.ok ? await userRes.json() : {};
     if (res.ok) {
       setRecords(data.records || []);
       setTotals(data.totals || null);
       setOvertime(data.overtime || []);
+      if (typeof userData.workStartMinutes === 'number') setStartMinutes(userData.workStartMinutes);
+      if (typeof userData.workEndMinutes === 'number') setEndMinutes(userData.workEndMinutes);
       // detect today's Jakarta date exists
       try {
         const now = new Date();
@@ -32,6 +42,7 @@ export default function AttendancePage() {
           .formatToParts(now)
           .reduce<Record<string,string>>((acc, p) => { if (p.type !== 'literal') acc[p.type] = p.value; return acc; }, {});
         const anchorISO = `${parts.year}-${parts.month}-${parts.day}`;
+        const anchorDate = new Date(`${anchorISO}T00:00:00+07:00`);
         const found = (data.records || []).some((r: any) => {
           const rd = new Date(r.date);
           const rp = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta", year: "numeric", month: "2-digit", day: "2-digit" })
@@ -41,16 +52,55 @@ export default function AttendancePage() {
           return rISO === anchorISO;
         });
         setHasToday(found);
+        // compute beforeStart based on user's scheduled start
+        if (typeof userData.workStartMinutes === 'number') {
+          const minutesSinceMidnight = Math.floor((now.getTime() - anchorDate.getTime()) / 60000);
+          setBeforeStart(minutesSinceMidnight < userData.workStartMinutes);
+          if (typeof userData.workEndMinutes === 'number') {
+            setEndMinutes(userData.workEndMinutes);
+            setAfterEnd(minutesSinceMidnight >= userData.workEndMinutes);
+          } else {
+            setAfterEnd(false);
+          }
+        } else {
+          setBeforeStart(false);
+          setAfterEnd(false);
+        }
       } catch {}
     } else {
       setRecords([]);
       setTotals(null);
       setHasToday(false);
+      setBeforeStart(false);
+      setAfterEnd(false);
     }
     setLoading(false);
   }, [user?.id]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Re-evaluate beforeStart periodically so the button unlocks when time crosses
+  useEffect(() => {
+    if (startMinutes == null) return;
+    const compute = () => {
+      try {
+        const now = new Date();
+        const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta", year: "numeric", month: "2-digit", day: "2-digit" })
+          .formatToParts(now)
+          .reduce<Record<string,string>>((acc, p) => { if (p.type !== 'literal') acc[p.type] = p.value; return acc; }, {});
+        const anchorISO = `${parts.year}-${parts.month}-${parts.day}`;
+        const anchorDate = new Date(`${anchorISO}T00:00:00+07:00`);
+        const minutesSinceMidnight = Math.floor((now.getTime() - anchorDate.getTime()) / 60000);
+        setBeforeStart(minutesSinceMidnight < startMinutes);
+        if (endMinutes != null) setAfterEnd(minutesSinceMidnight >= endMinutes);
+      } catch {
+        // noop
+      }
+    };
+    compute();
+    const t = setInterval(compute, 30000); // update every 30s
+    return () => clearInterval(t);
+  }, [startMinutes, endMinutes]);
 
   const canAccess = hasAccess(user, "attendance");
 
@@ -84,8 +134,20 @@ export default function AttendancePage() {
     <main className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">Attendance</h1>
-        <Button onClick={() => setOpen(true)} disabled={hasToday} title={hasToday ? "Sudah clock in hari ini" : undefined}>
-          {hasToday ? "Sudah Clock In" : "Clock In"}
+        <Button
+          onClick={() => setOpen(true)}
+          disabled={hasToday || beforeStart || afterEnd}
+          title={
+            hasToday
+              ? "Sudah clock in hari ini"
+              : beforeStart && startMinutes != null
+                ? `Bisa clock in mulai ${String(Math.floor(startMinutes/60)).padStart(2,'0')}:${String(startMinutes%60).padStart(2,'0')} WIB`
+                : afterEnd && endMinutes != null
+                  ? `Sudah lewat jam kerja (hingga ${String(Math.floor(endMinutes/60)).padStart(2,'0')}:${String(endMinutes%60).padStart(2,'0')} WIB)`
+                  : undefined
+          }
+        >
+          {hasToday ? "Sudah Clock In" : beforeStart ? "Belum Jam Masuk" : afterEnd ? "Sudah Lewat Jam Kerja" : "Clock In"}
         </Button>
       </div>
 
@@ -113,7 +175,6 @@ export default function AttendancePage() {
           <TableRow>
             <TableHead>Tanggal (Jakarta)</TableHead>
             <TableHead>Clock In (Jakarta)</TableHead>
-            <TableHead>Clock Out (Jakarta)</TableHead>
             <TableHead className="text-right">Worked (min)</TableHead>
             <TableHead className="text-right">Late (min)</TableHead>
           </TableRow>
@@ -126,7 +187,6 @@ export default function AttendancePage() {
               <TableRow key={r.id}>
                 <TableCell>{d}</TableCell>
                 <TableCell>{fmtJakarta(r.clockInAt)}</TableCell>
-                <TableCell>{r.clockOutAt ? fmtJakarta(r.clockOutAt) : "-"}</TableCell>
                 <TableCell className="text-right">{r.workedMinutes}</TableCell>
                 <TableCell className="text-right">{r.latenessMinutes}</TableCell>
               </TableRow>
@@ -134,7 +194,7 @@ export default function AttendancePage() {
           })}
           {!loading && records.length === 0 && (
             <TableRow>
-              <TableCell colSpan={5} className="text-center text-sm text-gray-500">Belum ada data</TableCell>
+              <TableCell colSpan={4} className="text-center text-sm text-gray-500">Belum ada data</TableCell>
             </TableRow>
           )}
         </TableBody>
@@ -171,7 +231,18 @@ export default function AttendancePage() {
           </DialogHeader>
           <div className="space-y-3">
             <div>Waktu akan disimpan dalam UTC dan ditetapkan ke tanggal Jakarta saat ini.</div>
-            <Button onClick={handleClockIn}>Clock In Now (UTC)</Button>
+            {beforeStart && startMinutes != null && (
+              <div className="text-sm text-amber-600">
+                Belum jam masuk. Dapat clock in mulai {String(Math.floor(startMinutes/60)).padStart(2,'0')}:
+                {String(startMinutes%60).padStart(2,'0')} WIB.
+              </div>
+            )}
+            {afterEnd && endMinutes != null && (
+              <div className="text-sm text-amber-600">
+                Sudah lewat jam kerja (hingga {String(Math.floor(endMinutes/60)).padStart(2,'0')}:{String(endMinutes%60).padStart(2,'0')} WIB). Silakan clock in besok.
+              </div>
+            )}
+            <Button onClick={handleClockIn} disabled={beforeStart || afterEnd}>Clock In Now (UTC)</Button>
           </div>
         </DialogContent>
       </Dialog>
