@@ -66,6 +66,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
                 <div className="pl-3 space-y-1">
                   <Link href="/reports/sales" className={`block rounded px-3 py-2 text-sm ${pathname === "/reports/sales" ? "bg-white text-black" : "hover:bg-white/10"}`}>Sales</Link>
                   <Link href="/reports/inventory" className={`block rounded px-3 py-2 text-sm ${pathname === "/reports/inventory" ? "bg-white text-black" : "hover:bg-white/10"}`}>Inventory</Link>
+                  <Link href="/reports/finance" className={`block rounded px-3 py-2 text-sm ${pathname === "/reports/finance" ? "bg-white text-black" : "hover:bg-white/10"}`}>Finance</Link>
                 </div>
               )}
             </div>
@@ -120,6 +121,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
                 <div className="pl-2 space-y-1">
                   <Link href="/reports/sales" onClick={() => setReportOpen(false)} className={`block rounded px-3 py-2 text-sm ${pathname === '/reports/sales' ? 'bg-black text-white' : 'bg-white text-black hover:bg-gray-100'}`}>Sales</Link>
                   <Link href="/reports/inventory" onClick={() => setReportOpen(false)} className={`block rounded px-3 py-2 text-sm ${pathname === '/reports/inventory' ? 'bg-black text-white' : 'bg-white text-black hover:bg-gray-100'}`}>Inventory</Link>
+                  <Link href="/reports/finance" onClick={() => setReportOpen(false)} className={`block rounded px-3 py-2 text-sm ${pathname === '/reports/finance' ? 'bg-black text-white' : 'bg-white text-black hover:bg-gray-100'}`}>Finance</Link>
                 </div>
               </div>
             )}

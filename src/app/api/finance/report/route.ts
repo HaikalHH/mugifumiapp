@@ -136,9 +136,14 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const yearRaw = searchParams.get("year");
+    const monthRaw = searchParams.get("month");
     const yearFilter = yearRaw ? Number(yearRaw) : null;
+    const monthFilter = monthRaw ? Number(monthRaw) : null;
     if (yearFilter !== null && Number.isNaN(yearFilter)) {
       return NextResponse.json({ error: "year must be a number" }, { status: 400 });
+    }
+    if (monthFilter !== null && (Number.isNaN(monthFilter) || monthFilter < 1 || monthFilter > 12)) {
+      return NextResponse.json({ error: "month must be 1-12" }, { status: 400 });
     }
 
     logRouteStart("finance-report", { yearFilter });
@@ -155,8 +160,13 @@ export async function GET(req: NextRequest) {
       });
     }, 2, "finance-report-periods");
 
+    // Optional filter by month (uses week.month if present, else startDate month)
+    const filtered = monthFilter == null
+      ? periods
+      : periods.filter((p) => (p.week?.month ?? (p.startDate.getMonth() + 1)) === monthFilter);
+
     const reports: PeriodReport[] = [];
-    for (const period of periods) {
+    for (const period of filtered) {
       const weekStart = period.week?.startDate ?? period.startDate;
       const weekEnd = period.week?.endDate ?? period.endDate;
       const weekInfo = period.week ?? null;
