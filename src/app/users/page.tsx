@@ -9,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 
 type UserRow = { id: number; username: string; name: string; role: string; createdAt: string; baseSalary?: number; workStartMinutes?: number; workEndMinutes?: number };
 
-const ROLES = ["Admin", "Manager", "Sales", "Bandung", "Jakarta", "Baker"] as const;
+const ROLES = ["Admin", "Manager", "Sales", "Bandung", "Jakarta", "Baker", "BDGSales"] as const;
 
 export default function UsersPage() {
   const { user } = useAuth();

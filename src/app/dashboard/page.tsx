@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { useAuth, lockedLocation } from "../providers";
+import { useAuth, lockedLocation, hasRole } from "../providers";
 import Link from "next/link";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui/table";
 
@@ -20,12 +20,16 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (!user) return;
-    const role = user.role;
+    const isBandung = hasRole(user, "Bandung");
+    const isJakarta = hasRole(user, "Jakarta");
+    const isSales = hasRole(user, "Sales");
+    const isBDGSales = hasRole(user, "BDGSales");
+    const isBaker = hasRole(user, "Baker");
     const locLock = lockedLocation(user);
 
     const tasks: Promise<any>[] = [];
     // For Jakarta/Bandung dashboard: pending orders + negative stock (locked region)
-    if (role === "Bandung" || role === "Jakarta") {
+    if (isBandung || isJakarta) {
       const params = new URLSearchParams({ page: "1", pageSize: "10" });
       if (locLock) params.set("location", locLock);
       tasks.push(
@@ -47,7 +51,7 @@ export default function DashboardPage() {
     }
 
     // For Baker: inventory minus across ALL locations (no region lock)
-    if (role === "Baker") {
+    if (isBaker) {
       tasks.push(
         fetch(`/api/inventory/overview`).then((r) => r.json()).then((d) => {
           const list: Array<{ key: string; available: number; loc: string }> = [];
@@ -62,7 +66,8 @@ export default function DashboardPage() {
     }
 
     // For Sales dashboard: orders with NOT PAID or missing actPayout
-    if (role === "Sales") {
+    // For BDGSales, follow Bandung dashboard only (skip Sales alerts)
+    if (isSales && !isBDGSales) {
       const params = new URLSearchParams({ page: "1", pageSize: "20" });
       tasks.push(
         fetch(`/api/orders?${params.toString()}`).then((r) => r.json()).then((d) => {
@@ -73,7 +78,7 @@ export default function DashboardPage() {
     }
 
     // For Sales/Jakarta/Bandung: show net salary for this month
-    if (role === "Sales" || role === "Bandung" || role === "Jakarta" || role === "Baker") {
+    if (isSales || isBandung || isJakarta || isBaker) {
       tasks.push(
         fetch(`/api/payroll/summary?month=${monthStr}`).then((r) => r.json()).then((d) => {
           const me = (d.users || []).find((x: any) => x.user?.id === user.id);
@@ -91,7 +96,7 @@ export default function DashboardPage() {
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold">Dashboard</h1>
 
-      {(user.role === "Bandung" || user.role === "Jakarta") && (
+      {(hasRole(user, "Bandung") || hasRole(user, "Jakarta")) && (
         <div className="space-y-4">
           <section>
             <div className="font-medium mb-2">Delivery Pending</div>
@@ -151,7 +156,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {user.role === "Baker" && (
+      {hasRole(user, "Baker") && (
         <section>
           <div className="font-medium mb-2">Inventory Minus (All Locations)</div>
           {negatives.length === 0 ? (
@@ -179,7 +184,7 @@ export default function DashboardPage() {
         </section>
       )}
 
-      {user.role === "Sales" && (
+      {hasRole(user, "Sales") && !hasRole(user, "BDGSales") && (
         <section>
           <div className="font-medium mb-2">Orders Perlu Tindakan</div>
           {alerts.length === 0 ? (
@@ -209,7 +214,7 @@ export default function DashboardPage() {
         </section>
       )}
 
-      {(user.role === "Sales" || user.role === "Bandung" || user.role === "Jakarta" || user.role === "Baker") && (
+      {(hasRole(user, "Sales") || hasRole(user, "Bandung") || hasRole(user, "Jakarta") || hasRole(user, "Baker")) && (
         <section>
           <div className="font-medium mb-1">Estimasi Gaji Bulan Ini</div>
           <div className="text-2xl font-semibold">Rp {net != null ? net.toLocaleString('id-ID') : 0}</div>

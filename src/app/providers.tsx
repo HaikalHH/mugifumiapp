@@ -2,8 +2,8 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 
-export type Role = "Admin" | "Manager" | "Sales" | "Bandung" | "Jakarta" | "Baker";
-export type AppUser = { id: number; username: string; name: string; role: Role };
+export type Role = "Admin" | "Manager" | "Sales" | "Bandung" | "Jakarta" | "Baker" | "BDGSales";
+export type AppUser = { id: number; username: string; name: string; role: Role | string };
 
 type AuthState = {
   user: AppUser | null;
@@ -55,6 +55,30 @@ export function useAuth() {
   return useContext(AuthContext);
 }
 
+function roleTokens(val: string | null | undefined): string[] {
+  if (!val) return [];
+  const raw = String(val)
+    .split(/[^A-Za-z]+/g)
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  const set = new Set(raw);
+  if (set.has("bdgsales")) {
+    set.add("bandung");
+    set.add("sales");
+  }
+  return Array.from(set);
+}
+
+export function hasRole(user: AppUser | null, role: Role): boolean {
+  if (!user) return false;
+  const set = new Set(roleTokens(user.role as string));
+  return set.has(String(role).toLowerCase());
+}
+
+export function hasAnyRole(user: AppUser | null, roles: Role[]): boolean {
+  return roles.some((r) => hasRole(user, r));
+}
+
 export function hasAccess(
   user: AppUser | null,
   page:
@@ -71,31 +95,31 @@ export function hasAccess(
     | "payroll",
 ): boolean {
   if (!user) return false;
-  const u = String(user.role).toLowerCase();
+  const roles = new Set(roleTokens(user.role as string));
 
   // Admin: no Attendance or Overtime (staff feature). Has approvals + payroll and others.
-  if (u === "admin") {
+  if (roles.has("admin")) {
     if (page === "attendance" || page === "overtime") return false;
     return true; // products, inventory, orders, delivery, reports, finance, users, overtimeApprovals, payroll
   }
 
   // Staff-only menus
-  if (page === "attendance") return u === "sales" || u === "bandung" || u === "jakarta" || u === "baker";
-  if (page === "overtime") return u === "sales" || u === "bandung" || u === "jakarta" || u === "baker";
+  if (page === "attendance") return ["sales","bandung","jakarta","baker"].some((r) => roles.has(r));
+  if (page === "overtime") return ["sales","bandung","jakarta","baker"].some((r) => roles.has(r));
   if (page === "overtimeApprovals" || page === "payroll" || page === "users") return false;
 
   // Existing menus by role
-  if (u === "manager") return page === "reports";
-  if (u === "sales") return page === "inventory" || page === "orders";
-  if (u === "baker") return page === "inventory"; // Baker: inventory only (plus attendance/overtime above)
-  if (u === "bandung" || u === "jakarta") return page === "inventory" || page === "delivery";
+  if (roles.has("manager")) return page === "reports";
+  if (roles.has("sales")) return page === "inventory" || page === "orders";
+  if (roles.has("baker")) return page === "inventory";
+  if (roles.has("bandung") || roles.has("jakarta")) return page === "inventory" || page === "delivery";
   return false;
 }
 
 export function lockedLocation(roleOrUser: Role | AppUser | null): "Bandung" | "Jakarta" | null {
-  const r = (roleOrUser && typeof roleOrUser === "object" ? roleOrUser.role : roleOrUser) as Role | null;
-  const u = String(r || "").toLowerCase();
-  if (u === "bandung") return "Bandung";
-  if (u === "jakarta") return "Jakarta";
+  const r = (roleOrUser && typeof roleOrUser === "object" ? (roleOrUser as AppUser).role : roleOrUser) as string | null;
+  const tokens = roleTokens(r || "");
+  if (tokens.includes("bandung")) return "Bandung";
+  if (tokens.includes("jakarta")) return "Jakarta";
   return null;
 }

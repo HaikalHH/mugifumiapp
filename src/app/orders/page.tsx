@@ -45,7 +45,7 @@ type Product = {
   price: number;
 };
 
-import { useAuth, lockedLocation } from "../providers";
+import { useAuth, lockedLocation, hasRole } from "../providers";
 
 type OrderStatus = "PAID" | "NOT PAID";
 const ORDER_STATUS_OPTIONS: OrderStatus[] = ["PAID", "NOT PAID"];
@@ -415,7 +415,8 @@ export default function OrdersPage() {
   const editingOrder = editingOrderId ? orders.find(o => o.id === editingOrderId) : null;
   const isEditingDelivered = Boolean(editingOrder?.deliveries && editingOrder.deliveries.length > 0);
 
-  if (user?.role === "Bandung" || user?.role === "Jakarta") {
+  // Do not lock Orders page for composite roles; only block if user has neither Sales nor Admin/Manager
+  if (user && !hasRole(user, "Sales") && !hasRole(user, "Admin") && !hasRole(user, "Manager")) {
     return (
       <main className="p-6">
         <div className="text-sm text-gray-600">Akses ditolak.</div>
@@ -446,7 +447,11 @@ export default function OrdersPage() {
         </div>
         <div className="flex flex-col gap-1">
           <Label>Location</Label>
-          <Select value={location} onValueChange={(v) => setLocation(v)} disabled={Boolean(lockedLocation(user))}>
+          <Select
+            value={location}
+            onValueChange={(v) => setLocation(v)}
+            disabled={Boolean(lockedLocation(user)) && !hasRole(user, "BDGSales")}
+          >
             <SelectTrigger>
               <SelectValue placeholder="Pilih Lokasi" />
             </SelectTrigger>
