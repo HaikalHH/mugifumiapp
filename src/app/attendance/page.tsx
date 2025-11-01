@@ -4,9 +4,18 @@ import { useAuth, hasAccess } from "../providers";
 import { Button } from "../../components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui/table";
 
+type AttendanceRecord = {
+  id: number | string;
+  date: string | Date;
+  clockInAt: string | Date;
+  clockOutAt?: string | Date | null;
+  workedMinutes: number;
+  latenessMinutes: number;
+};
+
 export default function AttendancePage() {
   const { user } = useAuth();
-  const [records, setRecords] = useState<any[]>([]);
+  const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [totals, setTotals] = useState<{ workedMinutes: number; latenessMinutes: number; hourlyRate: number; latenessPenalty: number; overtimeMinutes?: number } | null>(null);
   const [overtime, setOvertime] = useState<Array<{ id: number; startAt: string; endAt: string; minutes: number }>>([]);
   const [loading, setLoading] = useState(false);
@@ -24,19 +33,12 @@ export default function AttendancePage() {
     const d = new Date();
     const monthStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
     const res = await fetch(`/api/attendance/me?userId=${user.id}&month=${encodeURIComponent(monthStr)}`);
-    // Fetch user schedule only when not yet loaded
-    const needUser = startMinutes == null || endMinutes == null;
-    const userRes = needUser ? await fetch(`/api/users/${user.id}`) : null;
     const data = await res.json();
-    const userData = userRes && userRes.ok ? await userRes.json() : {};
     if (res.ok) {
-      setRecords(data.records || []);
+      const recs: AttendanceRecord[] = Array.isArray(data.records) ? (data.records as AttendanceRecord[]) : [];
+      setRecords(recs);
       setTotals(data.totals || null);
       setOvertime(data.overtime || []);
-      if (userRes) {
-        if (typeof userData.workStartMinutes === 'number') setStartMinutes(userData.workStartMinutes);
-        if (typeof userData.workEndMinutes === 'number') setEndMinutes(userData.workEndMinutes);
-      }
       // detect today's Jakarta date exists
       try {
         const now = new Date();
@@ -45,7 +47,7 @@ export default function AttendancePage() {
           .reduce<Record<string,string>>((acc, p) => { if (p.type !== 'literal') acc[p.type] = p.value; return acc; }, {});
         const anchorISO = `${parts.year}-${parts.month}-${parts.day}`;
         const anchorDate = new Date(`${anchorISO}T00:00:00+07:00`);
-        const found = (data.records || []).some((r: any) => {
+        const found = recs.some((r: AttendanceRecord) => {
           const rd = new Date(r.date);
           const rp = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta", year: "numeric", month: "2-digit", day: "2-digit" })
             .formatToParts(rd)
@@ -54,16 +56,12 @@ export default function AttendancePage() {
           return rISO === anchorISO;
         });
         setHasToday(found);
-        // compute beforeStart based on user's scheduled start
-        if (typeof userData.workStartMinutes === 'number') {
+        // compute beforeStart/afterEnd based on current scheduled start from state
+        if (typeof startMinutes === 'number') {
           const minutesSinceMidnight = Math.floor((now.getTime() - anchorDate.getTime()) / 60000);
-          setBeforeStart(minutesSinceMidnight < userData.workStartMinutes);
-          if (typeof userData.workEndMinutes === 'number') {
-            setEndMinutes(userData.workEndMinutes);
-            setAfterEnd(minutesSinceMidnight >= userData.workEndMinutes);
-          } else {
-            setAfterEnd(false);
-          }
+          setBeforeStart(minutesSinceMidnight < startMinutes);
+          if (typeof endMinutes === 'number') setAfterEnd(minutesSinceMidnight >= endMinutes);
+          else setAfterEnd(false);
         } else {
           setBeforeStart(false);
           setAfterEnd(false);
@@ -77,9 +75,23 @@ export default function AttendancePage() {
       setAfterEnd(false);
     }
     setLoading(false);
-  }, [user?.id]);
+  }, [user, startMinutes, endMinutes]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Fetch user schedule once per user
+  useEffect(() => {
+    if (!user) return;
+    (async () => {
+      try {
+        const r = await fetch(`/api/users/${user.id}`);
+        if (!r.ok) return;
+        const u = await r.json();
+        if (typeof u.workStartMinutes === 'number') setStartMinutes(u.workStartMinutes);
+        if (typeof u.workEndMinutes === 'number') setEndMinutes(u.workEndMinutes);
+      } catch {}
+    })();
+  }, [user]);
 
   // Re-evaluate beforeStart periodically so the button unlocks when time crosses
   useEffect(() => {
@@ -131,15 +143,14 @@ export default function AttendancePage() {
           const toleranceMs = 30 * 60 * 1000;
           const effectiveStartUTC = new Date(anchorDate.getTime() + scheduleStart * 60000 + toleranceMs);
           const lateness = Math.max(0, Math.round((now.getTime() - effectiveStartUTC.getTime()) / 60000));
-          const optimistic = {
+          const optimistic: AttendanceRecord = {
             id: `temp-${now.getTime()}`,
-            userId: user.id,
             date: anchorDate,
             clockInAt: now,
             clockOutAt: null,
             workedMinutes: 0,
             latenessMinutes: lateness,
-          } as any;
+          };
           setRecords((prev) => [optimistic, ...prev]);
         } catch {}
         // Refresh actual data in background to replace optimistic row
@@ -152,7 +163,7 @@ export default function AttendancePage() {
         } catch {}
         setErrorMsg(msg);
       }
-    } catch (e) {
+    } catch {
       setErrorMsg("Tidak dapat terhubung ke server");
     } finally {
       setSubmitting(false);
@@ -162,8 +173,7 @@ export default function AttendancePage() {
   const workedHours = useMemo(() => (totals ? Math.round((totals.workedMinutes / 60) * 10) / 10 : 0), [totals]);
   const overtimeHours = useMemo(() => (totals && totals.overtimeMinutes != null ? Math.round((totals.overtimeMinutes / 60) * 10) / 10 : 0), [totals]);
 
-  // Memoized formatters to reduce render cost
-  const dfDateJakarta = useMemo(() => new Intl.DateTimeFormat("id-ID", { timeZone: "Asia/Jakarta", dateStyle: "medium" }), []);
+  // Memoized formatter to reduce render cost
   const dfDateTimeJakarta = useMemo(() => new Intl.DateTimeFormat("id-ID", { timeZone: "Asia/Jakarta", dateStyle: "medium", timeStyle: "short", hourCycle: "h23" }), []);
   const fmtJakarta = useCallback((v: string | Date) => dfDateTimeJakarta.format(new Date(v)), [dfDateTimeJakarta]);
 
