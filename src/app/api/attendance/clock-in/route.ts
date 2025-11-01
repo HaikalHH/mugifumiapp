@@ -23,21 +23,6 @@ export async function POST(req: Request) {
     const now = new Date();
     const dateAnchor = getJakartaDateAnchorUTC(now);
 
-    // Allow clock-in only within today's work window [start, end)
-    const startMinutes = user.workStartMinutes ?? 540; // default 09:00
-    const endMinutes = user.workEndMinutes ?? 1020;    // default 17:00
-    const minutesSinceMidnightJakarta = Math.floor((now.getTime() - dateAnchor.getTime()) / 60000);
-    if (minutesSinceMidnightJakarta < startMinutes) {
-      const hh = String(Math.floor(startMinutes / 60)).padStart(2, "0");
-      const mm = String(startMinutes % 60).padStart(2, "0");
-      return NextResponse.json({ error: `Belum jam masuk (mulai ${hh}:${mm} WIB)` }, { status: 400 });
-    }
-    if (minutesSinceMidnightJakarta >= endMinutes) {
-      const eh = String(Math.floor(endMinutes / 60)).padStart(2, "0");
-      const em = String(endMinutes % 60).padStart(2, "0");
-      return NextResponse.json({ error: `Sudah lewat jam kerja (hingga ${eh}:${em} WIB)` }, { status: 400 });
-    }
-
     // Tidak perlu auto-close persist. Jika ada record sebelumnya open,
     // perhitungan attendance akan menganggap jam selesai sesuai jadwal.
 

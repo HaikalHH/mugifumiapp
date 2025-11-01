@@ -14,9 +14,14 @@ function parseMonth(q: string | null): YMonth | null {
   return { y, m: mm };
 }
 
-function monthRangeUTC({ y, m }: YMonth): { from: Date; to: Date } {
-  const from = new Date(`${y}-${String(m).padStart(2, "0")}-01T00:00:00.000Z`);
-  const to = new Date(new Date(from).setUTCMonth(from.getUTCMonth() + 1));
+// Month range anchored to Jakarta local midnight so day-1 isn't excluded
+function jakartaMonthRange({ y, m }: YMonth): { from: Date; to: Date } {
+  const mm = String(m).padStart(2, "0");
+  const from = new Date(`${y}-${mm}-01T00:00:00+07:00`);
+  const nextY = m === 12 ? y + 1 : y;
+  const nextM = m === 12 ? 1 : m + 1;
+  const nextMM = String(nextM).padStart(2, "0");
+  const to = new Date(`${nextY}-${nextMM}-01T00:00:00+07:00`);
   return { from, to };
 }
 
@@ -34,8 +39,8 @@ export async function GET(req: Request) {
     if (!parsed) return NextResponse.json({ error: "format month salah (YYYY-MM)" }, { status: 400 });
     const { y, m } = parsed;
 
-    // Month range in UTC (Attendance.date is already Jakarta-anchored midnight in UTC)
-    const { from, to } = monthRangeUTC({ y, m });
+    // Month range anchored in Jakarta, matching Attendance.date anchor
+    const { from, to } = jakartaMonthRange({ y, m });
 
     // Load user first; needed for schedule and auto-close
     const user = await prisma.user.findUnique({ where: { id: userId } });

@@ -10,6 +10,8 @@ export default function AttendancePage() {
   const [totals, setTotals] = useState<{ workedMinutes: number; latenessMinutes: number; hourlyRate: number; latenessPenalty: number; overtimeMinutes?: number } | null>(null);
   const [overtime, setOvertime] = useState<Array<{ id: number; startAt: string; endAt: string; minutes: number }>>([]);
   const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [hasToday, setHasToday] = useState(false);
   const [beforeStart, setBeforeStart] = useState(false);
   const [afterEnd, setAfterEnd] = useState(false);
@@ -21,18 +23,20 @@ export default function AttendancePage() {
     setLoading(true);
     const d = new Date();
     const monthStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-    const [res, userRes] = await Promise.all([
-      fetch(`/api/attendance/me?userId=${user.id}&month=${encodeURIComponent(monthStr)}`),
-      fetch(`/api/users/${user.id}`),
-    ]);
+    const res = await fetch(`/api/attendance/me?userId=${user.id}&month=${encodeURIComponent(monthStr)}`);
+    // Fetch user schedule only when not yet loaded
+    const needUser = startMinutes == null || endMinutes == null;
+    const userRes = needUser ? await fetch(`/api/users/${user.id}`) : null;
     const data = await res.json();
-    const userData = userRes.ok ? await userRes.json() : {};
+    const userData = userRes && userRes.ok ? await userRes.json() : {};
     if (res.ok) {
       setRecords(data.records || []);
       setTotals(data.totals || null);
       setOvertime(data.overtime || []);
-      if (typeof userData.workStartMinutes === 'number') setStartMinutes(userData.workStartMinutes);
-      if (typeof userData.workEndMinutes === 'number') setEndMinutes(userData.workEndMinutes);
+      if (userRes) {
+        if (typeof userData.workStartMinutes === 'number') setStartMinutes(userData.workStartMinutes);
+        if (typeof userData.workEndMinutes === 'number') setEndMinutes(userData.workEndMinutes);
+      }
       // detect today's Jakarta date exists
       try {
         const now = new Date();
@@ -104,22 +108,64 @@ export default function AttendancePage() {
 
   const handleClockIn = async () => {
     if (!user) return;
-    const res = await fetch("/api/attendance/clock-in", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: user.id }) });
-    if (res.ok) {
-      load();
+    setSubmitting(true);
+    setErrorMsg(null);
+    try {
+      const res = await fetch("/api/attendance/clock-in", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: user.id }),
+      });
+      if (res.ok) {
+        // Instantly reflect UI while refreshing data in background
+        setHasToday(true);
+        // Add optimistic row for today so table updates immediately
+        try {
+          const now = new Date();
+          const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta", year: "numeric", month: "2-digit", day: "2-digit" })
+            .formatToParts(now)
+            .reduce<Record<string,string>>((acc, p) => { if (p.type !== 'literal') acc[p.type] = p.value; return acc; }, {});
+          const anchorISO = `${parts.year}-${parts.month}-${parts.day}`;
+          const anchorDate = new Date(`${anchorISO}T00:00:00+07:00`);
+          const scheduleStart = (startMinutes ?? 540);
+          const toleranceMs = 30 * 60 * 1000;
+          const effectiveStartUTC = new Date(anchorDate.getTime() + scheduleStart * 60000 + toleranceMs);
+          const lateness = Math.max(0, Math.round((now.getTime() - effectiveStartUTC.getTime()) / 60000));
+          const optimistic = {
+            id: `temp-${now.getTime()}`,
+            userId: user.id,
+            date: anchorDate,
+            clockInAt: now,
+            clockOutAt: null,
+            workedMinutes: 0,
+            latenessMinutes: lateness,
+          } as any;
+          setRecords((prev) => [optimistic, ...prev]);
+        } catch {}
+        // Refresh actual data in background to replace optimistic row
+        load();
+      } else {
+        let msg = "Gagal clock in";
+        try {
+          const data = await res.json();
+          if (data && typeof data.error === "string") msg = data.error;
+        } catch {}
+        setErrorMsg(msg);
+      }
+    } catch (e) {
+      setErrorMsg("Tidak dapat terhubung ke server");
+    } finally {
+      setSubmitting(false);
     }
   };
 
   const workedHours = useMemo(() => (totals ? Math.round((totals.workedMinutes / 60) * 10) / 10 : 0), [totals]);
   const overtimeHours = useMemo(() => (totals && totals.overtimeMinutes != null ? Math.round((totals.overtimeMinutes / 60) * 10) / 10 : 0), [totals]);
 
-  const fmtJakarta = (v: string | Date) =>
-    new Intl.DateTimeFormat("id-ID", {
-      timeZone: "Asia/Jakarta",
-      dateStyle: "medium",
-      timeStyle: "short",
-      hourCycle: "h23",
-    }).format(new Date(v));
+  // Memoized formatters to reduce render cost
+  const dfDateJakarta = useMemo(() => new Intl.DateTimeFormat("id-ID", { timeZone: "Asia/Jakarta", dateStyle: "medium" }), []);
+  const dfDateTimeJakarta = useMemo(() => new Intl.DateTimeFormat("id-ID", { timeZone: "Asia/Jakarta", dateStyle: "medium", timeStyle: "short", hourCycle: "h23" }), []);
+  const fmtJakarta = useCallback((v: string | Date) => dfDateTimeJakarta.format(new Date(v)), [dfDateTimeJakarta]);
 
   if (!canAccess) {
     return (
@@ -133,19 +179,22 @@ export default function AttendancePage() {
         <h1 className="text-xl font-semibold">Attendance</h1>
         <Button
           onClick={handleClockIn}
-          disabled={hasToday || beforeStart || afterEnd}
+          disabled={loading || submitting || hasToday}
           title={
             hasToday
               ? "Sudah clock in hari ini"
               : beforeStart && startMinutes != null
-                ? `Bisa clock in mulai ${String(Math.floor(startMinutes/60)).padStart(2,'0')}:${String(startMinutes%60).padStart(2,'0')} WIB`
+                ? `Belum jam masuk (mulai ${String(Math.floor(startMinutes/60)).padStart(2,'0')}:${String(startMinutes%60).padStart(2,'0')} WIB)`
                 : afterEnd && endMinutes != null
                   ? `Sudah lewat jam kerja (hingga ${String(Math.floor(endMinutes/60)).padStart(2,'0')}:${String(endMinutes%60).padStart(2,'0')} WIB)`
                   : undefined
           }
         >
-          {hasToday ? "Sudah Clock In" : beforeStart ? "Belum Jam Masuk" : afterEnd ? "Sudah Lewat Jam Kerja" : "Clock In"}
+          {submitting ? "Mencatat..." : hasToday ? "Sudah Clock In" : "Clock In"}
         </Button>
+        {errorMsg && (
+          <div className="ml-3 text-xs text-red-600">{errorMsg}</div>
+        )}
         {(beforeStart && startMinutes != null) && (
           <div className="ml-3 text-xs text-amber-600">
             Bisa clock in mulai {String(Math.floor(startMinutes/60)).padStart(2,'0')}:{String(startMinutes%60).padStart(2,'0')} WIB
