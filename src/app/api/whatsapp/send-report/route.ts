@@ -1,15 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "../../../../lib/prisma";
 import { withRetry, createErrorResponse, logRouteStart, logRouteComplete } from "../../../../lib/db-utils";
+import { sendGreenGroupMessage } from "../../../../lib/greenapi";
 
-// WhatsApp API configuration
-const ULTRAMSG_INSTANCE_ID = process.env.ULTRAMSG_INSTANCE_ID || "instance146361";
-const ULTRAMSG_TOKEN = process.env.ULTRAMSG_TOKEN || "0dphdxuuhgdfhtja";
-const ULTRAMSG_PHONES = process.env.ULTRAMSG_PHONES || "+6281275167471,+6281378471123,+6281276167733,+6281261122306";
-const ULTRAMSG_BASE_URL = `https://api.ultramsg.com/${ULTRAMSG_INSTANCE_ID}`;
-
-// Parse phone numbers from comma-separated string
-const PHONE_NUMBERS = ULTRAMSG_PHONES.split(',').map(phone => phone.trim());
+// Sales report will be sent to a WhatsApp group via Green API
+const SALES_REPORT_GROUP_ID = process.env.GREENAPI_SALES_GROUP_ID || ""; // e.g. 6281275167471-1555838526
 
 interface OutletRegionData {
   count: number;
@@ -18,51 +13,12 @@ interface OutletRegionData {
   ongkirPotongan: number;
 }
 
-async function sendWhatsAppMessage(message: string, phoneNumber: string): Promise<boolean> {
-  try {
-    const response = await fetch(`${ULTRAMSG_BASE_URL}/messages/chat`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        token: ULTRAMSG_TOKEN,
-        to: phoneNumber,
-        body: message,
-      }),
-    });
-
-    if (!response.ok) {
-      console.error(`Failed to send WhatsApp message to ${phoneNumber}:`, await response.text());
-      return false;
-    }
-
-    const result = await response.json();
-    console.log(`WhatsApp message sent successfully to ${phoneNumber}:`, result);
-    return true;
-  } catch (error) {
-    console.error(`Error sending WhatsApp message to ${phoneNumber}:`, error);
-    return false;
+async function sendSalesReportToGroup(message: string) {
+  if (!SALES_REPORT_GROUP_ID) {
+    return { ok: false, error: "GREENAPI_SALES_GROUP_ID not set" } as const;
   }
-}
-
-async function sendWhatsAppToMultipleNumbers(message: string): Promise<{ total: number; success: number; failed: number; results: Array<{ phone: string; success: boolean }> }> {
-  const results = await Promise.all(
-    PHONE_NUMBERS.map(async (phone) => {
-      const success = await sendWhatsAppMessage(message, phone);
-      return { phone, success };
-    })
-  );
-
-  const successCount = results.filter(r => r.success).length;
-  const failedCount = results.filter(r => !r.success).length;
-
-  return {
-    total: PHONE_NUMBERS.length,
-    success: successCount,
-    failed: failedCount,
-    results,
-  };
+  const ok = await sendGreenGroupMessage(SALES_REPORT_GROUP_ID, message);
+  return { ok } as const;
 }
 
 async function getOutletRegionReport(date?: Date): Promise<{ byOutletRegion: Record<string, OutletRegionData>; totalActual: number; totalOngkirPotongan: number; orderCount: number }> {
@@ -276,22 +232,20 @@ export async function POST(req: NextRequest) {
     // Format message
     const message = formatReportMessage(reportData, dateParam);
 
-    // Send WhatsApp message to multiple numbers
-    const sendResult = await sendWhatsAppToMultipleNumbers(message);
-
-    if (sendResult.success === 0) {
+    // Send WhatsApp message to the configured group via Green API
+    const sendResult = await sendSalesReportToGroup(message);
+    if (!sendResult.ok) {
       return NextResponse.json(
-        { error: "Failed to send WhatsApp message to all recipients" },
+        { error: sendResult.error || "Failed to send WhatsApp group message" },
         { status: 500 }
       );
     }
 
-    logRouteComplete('whatsapp-send-report', sendResult.success);
+    logRouteComplete('whatsapp-send-report', 1);
     return NextResponse.json({ 
       success: true, 
-      message: `Report sent successfully to ${sendResult.success}/${sendResult.total} recipients`,
-      preview: message,
-      recipients: sendResult.results
+      message: `Report sent to WhatsApp group`,
+      preview: message
     });
   } catch (error) {
     return NextResponse.json(
@@ -323,21 +277,18 @@ export async function GET(req: NextRequest) {
     // Format message
     const message = formatReportMessage(reportData, new Date());
 
-    // Send WhatsApp message to multiple numbers
-    const sendResult = await sendWhatsAppToMultipleNumbers(message);
-
-    if (sendResult.success === 0) {
+    const sendResult = await sendSalesReportToGroup(message);
+    if (!sendResult.ok) {
       return NextResponse.json(
-        { error: "Failed to send WhatsApp message to all recipients" },
+        { error: sendResult.error || "Failed to send WhatsApp group message" },
         { status: 500 }
       );
     }
 
-    logRouteComplete('whatsapp-send-report-cron', sendResult.success);
+    logRouteComplete('whatsapp-send-report-cron', 1);
     return NextResponse.json({ 
       success: true, 
-      message: `Report sent successfully via cron to ${sendResult.success}/${sendResult.total} recipients`,
-      recipients: sendResult.results
+      message: `Report sent successfully via cron to group`
     });
   } catch (error) {
     return NextResponse.json(
@@ -346,4 +297,3 @@ export async function GET(req: NextRequest) {
     );
   }
 }
-

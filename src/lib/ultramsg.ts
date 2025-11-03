@@ -1,19 +1,28 @@
-// Ultramsg utility functions for WhatsApp notifications
+// WhatsApp notification helpers (migrated to Green API backend)
+import { sendGreenMessage } from "./greenapi";
 
-// WhatsApp API configuration
-const ULTRAMSG_INSTANCE_ID = process.env.ULTRAMSG_INSTANCE_ID || "instance146361";
-const ULTRAMSG_TOKEN = process.env.ULTRAMSG_TOKEN || "0dphdxuuhgdfhtja";
 const ULTRAMSG_PHONES = process.env.ULTRAMSG_PHONES || "+6281275167471,+6281378471123,+6281276167733,+6281261122306";
-const ULTRAMSG_BASE_URL = `https://api.ultramsg.com/${ULTRAMSG_INSTANCE_ID}`;
-
-// Parse phone numbers from comma-separated string (for reports)
-const PHONE_NUMBERS = ULTRAMSG_PHONES.split(',').map(phone => phone.trim());
+const PHONE_NUMBERS = ULTRAMSG_PHONES.split(',').map(phone => phone.trim()).filter(Boolean);
 
 // Order notification phone numbers by region (from environment variables)
 const ORDER_PHONE_NUMBERS = {
-  Jakarta: process.env.ULTRAMSG_ORDER_PHONE_JAKARTA || "+628986723926",
-  Bandung: process.env.ULTRAMSG_ORDER_PHONE_BANDUNG || "+6281320699662"
+  Jakarta: process.env.GREENAPI_ORDER_PHONE_JAKARTA || process.env.ULTRAMSG_ORDER_PHONE_JAKARTA || "+628986723926",
+  Bandung: process.env.GREENAPI_ORDER_PHONE_BANDUNG || process.env.ULTRAMSG_ORDER_PHONE_BANDUNG || "+6281320699662",
 };
+
+function resolveRegionPhone(location: string): string | null {
+  const key = String(location || "").trim();
+  const phone = ORDER_PHONE_NUMBERS[key as keyof typeof ORDER_PHONE_NUMBERS] || null;
+  if (!phone) {
+    const expectedEnv = key.toLowerCase() === "jakarta"
+      ? "GREENAPI_ORDER_PHONE_JAKARTA (fallback ULTRAMSG_ORDER_PHONE_JAKARTA)"
+      : key.toLowerCase() === "bandung"
+        ? "GREENAPI_ORDER_PHONE_BANDUNG (fallback ULTRAMSG_ORDER_PHONE_BANDUNG)"
+        : "GREENAPI_ORDER_PHONE_<REGION>";
+    console.warn(`[WhatsApp] Missing region phone for '${key}'. Set ${expectedEnv}.`);
+  }
+  return phone;
+}
 
 export interface OrderNotificationData {
   outlet: string;
@@ -45,28 +54,16 @@ export interface DeliveryNotificationData {
   }>;
 }
 
+function phoneToChatId(num: string): string {
+  const digits = String(num).replace(/\D/g, "");
+  const intl = digits.startsWith("62") ? digits : digits.startsWith("0") ? `62${digits.slice(1)}` : digits;
+  return `${intl}@c.us`;
+}
+
 export async function sendWhatsAppMessage(message: string, phoneNumber: string): Promise<boolean> {
   try {
-    const response = await fetch(`${ULTRAMSG_BASE_URL}/messages/chat`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        token: ULTRAMSG_TOKEN,
-        to: phoneNumber,
-        body: message,
-      }),
-    });
-
-    if (!response.ok) {
-      console.error(`Failed to send WhatsApp message to ${phoneNumber}:`, await response.text());
-      return false;
-    }
-
-    const result = await response.json();
-    console.log(`WhatsApp message sent successfully to ${phoneNumber}:`, result);
-    return true;
+    const chatId = phoneToChatId(phoneNumber);
+    return await sendGreenMessage(chatId, message);
   } catch (error) {
     console.error(`Error sending WhatsApp message to ${phoneNumber}:`, error);
     return false;
@@ -176,8 +173,8 @@ export async function sendOrderNotification(data: OrderNotificationData): Promis
   try {
     const message = formatOrderNotificationMessage(data);
     
-    // Get phone number based on location
-    const phoneNumber = ORDER_PHONE_NUMBERS[data.location as keyof typeof ORDER_PHONE_NUMBERS];
+    // Get phone number based on location (with validation)
+    const phoneNumber = resolveRegionPhone(data.location);
     
     if (!phoneNumber) {
       return {
@@ -218,8 +215,8 @@ export async function sendDeliveryNotification(data: DeliveryNotificationData): 
   try {
     const message = formatDeliveryNotificationMessage(data);
     
-    // Get phone number based on location
-    const phoneNumber = ORDER_PHONE_NUMBERS[data.location as keyof typeof ORDER_PHONE_NUMBERS];
+    // Get phone number based on location (with validation)
+    const phoneNumber = resolveRegionPhone(data.location);
     
     if (!phoneNumber) {
       return {
