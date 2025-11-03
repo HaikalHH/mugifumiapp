@@ -258,15 +258,12 @@ export async function POST(req: NextRequest) {
 // GET endpoint for cron job (scheduled at 7 PM daily)
 export async function GET(req: NextRequest) {
   try {
-    // Verify cron secret for security
-    const authHeader = req.headers.get("authorization");
-    const cronSecret = process.env.CRON_SECRET || "your-secret-key-here";
-    
-    if (authHeader !== `Bearer ${cronSecret}`) {
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 401 }
-      );
+    // Allow either Vercel Scheduled Function (x-vercel-cron) or custom Authorization bearer
+    const isVercelCron = req.headers.has("x-vercel-cron");
+    const authHeader = req.headers.get("authorization") || "";
+    const cronSecret = process.env.CRON_SECRET || "";
+    if (!isVercelCron && (!cronSecret || authHeader !== `Bearer ${cronSecret}`)) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     logRouteStart('whatsapp-send-report-cron', {});
