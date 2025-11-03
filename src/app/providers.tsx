@@ -92,7 +92,9 @@ export function hasAccess(
     | "attendance"
     | "overtime"
     | "overtimeApprovals"
-    | "payroll",
+    | "payroll"
+    | "slip"
+    | "bonus",
 ): boolean {
   if (!user) return false;
   const roles = new Set(roleTokens(user.role as string));
@@ -100,19 +102,29 @@ export function hasAccess(
   // Admin: no Attendance or Overtime (staff feature). Has approvals + payroll and others.
   if (roles.has("admin")) {
     if (page === "attendance" || page === "overtime") return false;
+    if (page === "slip") return false; // slip gaji bukan untuk Admin
     return true; // products, inventory, orders, delivery, reports, finance, users, overtimeApprovals, payroll
   }
 
   // Staff-only menus
   if (page === "attendance") return ["sales","bandung","jakarta","baker"].some((r) => roles.has(r));
   if (page === "overtime") return ["sales","bandung","jakarta","baker"].some((r) => roles.has(r));
-  if (page === "overtimeApprovals" || page === "payroll" || page === "users") return false;
+  if (page === "overtimeApprovals" || page === "payroll" || page === "users" || page === "bonus") return false;
 
   // Existing menus by role
   if (roles.has("manager")) return page === "reports";
   if (roles.has("sales")) return page === "inventory" || page === "orders";
-  if (roles.has("baker")) return page === "inventory";
-  if (roles.has("bandung") || roles.has("jakarta")) return page === "inventory" || page === "delivery";
+  if (roles.has("baker")) return page === "inventory" || page === "slip";
+  if (roles.has("bandung") || roles.has("jakarta")) {
+    if (page === "inventory" || page === "delivery") return true;
+    if (page === "slip") return true;
+    return false;
+  }
+  if (roles.has("bdgsales")) {
+    // Attendance/Overtime already handled above via tokens (bdgsales includes 'sales' and 'bandung')
+    if (page === "slip") return true;
+    return false;
+  }
   return false;
 }
 

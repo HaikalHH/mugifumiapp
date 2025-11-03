@@ -113,6 +113,7 @@ export default function OrdersPage() {
   const [productsLoading, setProductsLoading] = useState(true);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [quantity, setQuantity] = useState(1);
+  const [inventoryOverview, setInventoryOverview] = useState<null | { byLocation: Record<string, Record<string, { total: number; reserved: number; available: number }>> }>(null);
 
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
@@ -178,13 +179,24 @@ export default function OrdersPage() {
     setIsModalOpen(true);
   };
 
-  const openProductModal = () => {
+  const openProductModal = async () => {
     setSelectedProduct(null);
     setQuantity(1);
+    try {
+      if (!inventoryOverview) {
+        const res = await fetch('/api/inventory/overview');
+        if (res.ok) {
+          const data = await res.json();
+          setInventoryOverview({ byLocation: data.byLocation || {} });
+        }
+      }
+    } catch (e) {
+      // ignore fetch errors, fallback to no warning
+    }
     setIsProductModalOpen(true);
   };
 
-  const addProduct = () => {
+  const addProduct = async () => {
     if (!selectedProduct) {
       setError("Please select a product");
       return;
@@ -193,7 +205,31 @@ export default function OrdersPage() {
       setError("Quantity must be greater than 0");
       return;
     }
-    
+    // Check inventory availability for current location
+    try {
+      const currentLoc = editingOrderId ? editingLocation : location;
+      let overview = inventoryOverview;
+      if (!overview) {
+        const res = await fetch('/api/inventory/overview');
+        if (res.ok) {
+          const data = await res.json();
+          overview = { byLocation: data.byLocation || {} };
+          setInventoryOverview(overview);
+        }
+      }
+      const key = `${selectedProduct.name} (${selectedProduct.code})`;
+      const locData = overview?.byLocation?.[currentLoc]?.[key];
+      const available = locData ? Number(locData.available) : 0;
+      if (available - quantity < 0) {
+        const proceed = window.confirm('Item ini sedang tidak tersedia atau stok kurang. Apakah Anda yakin ingin menambahkan?');
+        if (!proceed) {
+          return;
+        }
+      }
+    } catch (e) {
+      // if check fails, continue silently
+    }
+
     setError("");
     setSelectedItems(prev => [...prev, { 
       productId: selectedProduct.id, 

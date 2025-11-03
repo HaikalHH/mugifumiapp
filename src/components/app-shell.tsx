@@ -22,10 +22,12 @@ export default function AppShell({ children }: { children: ReactNode }) {
       { href: "/delivery", label: "Delivery", show: hasAccess(user, "delivery") },
       // Finance will be shown as a grouped submenu below
       { href: "/attendance", label: "Attendance", show: hasAccess(user, "attendance") },
+      { href: "/slip", label: "Slip Gaji", show: hasAccess(user, "slip") },
       { href: "/overtime", label: "Overtime", show: hasAccess(user, "overtime") },
       { href: "/overtime/approvals", label: "Overtime Approvals", show: hasAccess(user, "overtimeApprovals") },
       { href: "/users", label: "Users", show: hasAccess(user, "users") },
       { href: "/payroll", label: "Payroll", show: hasAccess(user, "payroll") },
+      { href: "/bonus", label: "Bonus", show: hasAccess(user, "bonus") },
     ],
     [user]
   );

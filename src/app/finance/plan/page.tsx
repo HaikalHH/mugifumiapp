@@ -20,7 +20,7 @@ type Metrics = {
   totalOmsetPaidByOutlet: Array<{ outlet: string; amount: number }>;
   danaTertahan: Array<{ outlet: string; amount: number }>;
   danaTertahanTotal: number;
-  danaTertahanDetails: Array<{ outlet: string; entries: Array<{ customer: string; amount: number }> }>;
+  danaTertahanDetails: Array<{ outlet: string; entries: Array<{ customer: string; amount: number; location: string }> }>;
   totalPlanAmount: number;
   planEntries: ApiPlanEntry[];
   totalActualSpent: number;
@@ -870,7 +870,10 @@ export default function FinancePlanPage() {
                   .flatMap((d) => d.entries)
                   .map((entry, idx) => (
                     <TableRow key={`${item.outlet}-detail-${idx}`}>
-                      <TableCell className="pl-6 text-sm text-gray-700">{entry.customer || '-'}</TableCell>
+                      <TableCell className="pl-6 text-sm text-gray-700">
+                        <Badge color="green" className="text-xs mr-2">{entry.location || '-'}</Badge>
+                        {entry.customer || '-'}
+                      </TableCell>
                       <TableCell className="text-right text-sm text-gray-700">{formatCurrency(entry.amount)}</TableCell>
                     </TableRow>
                   ))}

@@ -21,10 +21,11 @@ export async function GET(req: Request) {
     const from = new Date(`${y}-${String(m).padStart(2, "0")}-01T00:00:00.000Z`);
     const to = new Date(new Date(from).setUTCMonth(from.getUTCMonth() + 1));
 
-    const [users, attendance, overtime] = await Promise.all([
+    const [users, attendance, overtime, bonuses] = await Promise.all([
       prisma.user.findMany({ orderBy: { id: "asc" } }),
       prisma.attendance.findMany({ where: { date: { gte: from, lt: to } } }),
       prisma.overtimeRequest.findMany({ where: { startAt: { gte: from, lt: to }, status: "APPROVED" } }),
+      prisma.userBonus.findMany({ where: { year: y, month: m } }),
     ]);
 
     const byUser: Record<number, any> = {};
@@ -37,6 +38,7 @@ export async function GET(req: Request) {
         penalty: 0,
         overtimePay: 0,
         netSalary: u.baseSalary,
+        bonus: 0,
       };
     }
     for (const a of attendance) {
@@ -68,6 +70,11 @@ export async function GET(req: Request) {
       v.penalty = Math.round((excess * v.user.penaltyRate) / 60);
       v.overtimePay = Math.round((v.totals.overtimeMinutes * v.user.hourlyRate) / 60);
       v.netSalary = Math.max(0, v.user.baseSalary - v.penalty + v.overtimePay);
+    }
+    // Attach monthly bonus per user (not included in netSalary)
+    for (const b of bonuses) {
+      const u = byUser[b.userId];
+      if (u) u.bonus = (u.bonus || 0) + (b.amount || 0);
     }
     return NextResponse.json({ month: `${y}-${String(m).padStart(2, "0")}`, users: Object.values(byUser) });
   } catch (error) {

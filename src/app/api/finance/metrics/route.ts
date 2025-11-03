@@ -12,13 +12,13 @@ type MetricsResponse = {
   totalOmsetPaidByOutlet: Array<{ outlet: string; amount: number }>;
   danaTertahan: Array<{ outlet: string; amount: number }>;
   danaTertahanTotal: number;
-  danaTertahanDetails: Array<{ outlet: string; entries: Array<{ customer: string; amount: number }> }>;
+  danaTertahanDetails: Array<{ outlet: string; entries: Array<{ customer: string; amount: number; location: string }> }>;
   totalPlanAmount: number;
   planEntries: Array<{
     id: number;
     category: FinanceCategory;
     amount: number;
-    data: any;
+    data: unknown;
     createdAt: string;
     updatedAt: string;
   }>;
@@ -27,7 +27,7 @@ type MetricsResponse = {
     id: number;
     category: FinanceCategory;
     amount: number;
-    data: any;
+    data: unknown;
     createdAt: string;
     updatedAt: string;
   }>;
@@ -128,9 +128,8 @@ export async function GET(req: NextRequest) {
     
     for (const order of orders) {
       // Calculate total order value from items (pre-discount subtotal)
-      const preDiscountSubtotal = order.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-      const totalAmount = order.totalAmount || preDiscountSubtotal;
-      
+      const preDiscountSubtotal = order.items.reduce((sum: number, item: { price: number; quantity: number }) => sum + (item.price * item.quantity), 0);
+
       // Apply same logic as Reports Sales API
       const isFree = order.outlet.toLowerCase() === "free";
       const isCafe = order.outlet.toLowerCase() === "cafe";
@@ -223,8 +222,8 @@ export async function GET(req: NextRequest) {
       
       // Process all orders with actPayout (excluding NOT PAID status), or WhatsApp with processed delivery
       for (const order of orders) {
-        const orderItems = order.items || [];
-        const preDiscountSubtotal = orderItems.reduce((acc: number, item: any) => acc + (item.price * item.quantity), 0);
+        const orderItems = (order.items || []) as Array<{ price: number; quantity: number }>;
+        const preDiscountSubtotal = orderItems.reduce((acc: number, item: { price: number; quantity: number }) => acc + (item.price * item.quantity), 0);
         const totalAmount = order.totalAmount || preDiscountSubtotal;
         
         const isWhatsApp = order.outlet.toLowerCase() === "whatsapp";
@@ -278,12 +277,12 @@ export async function GET(req: NextRequest) {
     // Dana tertahan (orders without actPayout or with status NOT PAID)
     const danaTertahanData = await withRetry(async () => {
       const outletMap = new Map<string, number>();
-      const detailsMap = new Map<string, Array<{ customer: string; amount: number }>>();
+      const detailsMap = new Map<string, Array<{ customer: string; amount: number; location: string }>>();
       
       // Process all orders to calculate dana tertahan
       for (const order of orders) {
-        const orderItems = order.items || [];
-        const preDiscountSubtotal = orderItems.reduce((acc: number, item: any) => acc + (item.price * item.quantity), 0);
+        const orderItems = (order.items || []) as Array<{ price: number; quantity: number }>;
+        const preDiscountSubtotal = orderItems.reduce((acc: number, item: { price: number; quantity: number }) => acc + (item.price * item.quantity), 0);
         const totalAmount = order.totalAmount || preDiscountSubtotal;
         
         const isWhatsApp = order.outlet.toLowerCase() === "whatsapp";
@@ -340,8 +339,9 @@ export async function GET(req: NextRequest) {
           outletMap.set(order.outlet, current + danaTertahanAmount);
 
           const customerName = (order.customer && String(order.customer).trim()) || "-";
+          const location = (order.location && String(order.location).trim()) || "-";
           const list = detailsMap.get(order.outlet) || [];
-          list.push({ customer: customerName, amount: danaTertahanAmount });
+          list.push({ customer: customerName, amount: danaTertahanAmount, location });
           detailsMap.set(order.outlet, list);
         }
       }

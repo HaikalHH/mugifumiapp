@@ -12,6 +12,9 @@ export default function DashboardPage() {
   const [negatives, setNegatives] = useState<Array<{ key: string; available: number; loc: string }>>([]);
   const [alerts, setAlerts] = useState<Array<{ id: number; customer?: string; outlet?: string; status?: string; actPayout?: number }>>([]);
   const [net, setNet] = useState<number | null>(null);
+  const [baseAfterPenalty, setBaseAfterPenalty] = useState<number | null>(null);
+  const [overtimePay, setOvertimePay] = useState<number | null>(null);
+  const [monthBonus, setMonthBonus] = useState<number | null>(null);
 
   const monthStr = useMemo(() => {
     const d = new Date();
@@ -82,7 +85,16 @@ export default function DashboardPage() {
       tasks.push(
         fetch(`/api/payroll/summary?month=${monthStr}`).then((r) => r.json()).then((d) => {
           const me = (d.users || []).find((x: any) => x.user?.id === user.id);
-          setNet(me ? me.netSalary : null);
+          if (me) {
+            setNet(me.netSalary);
+            const base = me.user?.baseSalary || 0;
+            const penalty = me.penalty || 0;
+            setBaseAfterPenalty(Math.max(0, base - penalty));
+            setOvertimePay(me.overtimePay || 0);
+            setMonthBonus(me.bonus || 0);
+          } else {
+            setNet(null); setBaseAfterPenalty(null); setOvertimePay(null); setMonthBonus(null);
+          }
         }).catch(() => setNet(null))
       );
     }
@@ -218,6 +230,11 @@ export default function DashboardPage() {
         <section>
           <div className="font-medium mb-1">Estimasi Gaji Bulan Ini</div>
           <div className="text-2xl font-semibold">Rp {net != null ? net.toLocaleString('id-ID') : 0}</div>
+          <div className="mt-1 text-sm text-gray-700">
+            <div>Pokok (setelah potongan): <span className="font-medium">Rp {Math.max(0, baseAfterPenalty || 0).toLocaleString('id-ID')}</span></div>
+            <div>Overtime: <span className="font-medium">Rp {Math.max(0, overtimePay || 0).toLocaleString('id-ID')}</span></div>
+            <div>Bonus Terkumpul Bulan Ini: <span className="font-medium">Rp {Math.max(0, monthBonus || 0).toLocaleString('id-ID')}</span></div>
+          </div>
         </section>
       )}
     </div>
