@@ -37,23 +37,58 @@ type SalesData = {
   totalPotonganAmount: number;
 };
 
-type ApiPlanEntry = {
-  id: number;
-  category: FinanceCategory;
-  amount: number;
-  data: any;
+// Typed shapes for plan data by category
+type BahanPlanData = {
+  budget: number;
+  kebutuhan: number;
+  note?: string;
+  differenceType: "EKSPANSI" | "SISA";
+  differenceValue: number;
 };
 
-type ApiActualEntry = {
-  id: number;
-  category: FinanceCategory;
-  amount: number;
-  data: any;
+type PayrollOvertimeEntry = { name: string; amount: number };
+type PayrollPlanData = {
+  baseSalary: number;
+  totalOvertime: number;
+  totalPayroll: number;
+  overtimeEntries: PayrollOvertimeEntry[];
 };
 
-type PlanEntryDraft = {
+type SimpleItem = { name: string; amount: number };
+type SimpleItemsPlanData = { items: SimpleItem[] };
+
+type PerlengkapanItem = { type: "PRODUKSI" | "OPERASIONAL"; name: string; amount: number };
+type PerlengkapanPlanData = { items: PerlengkapanItem[] };
+
+type MarketingPlanData = { value: number };
+
+type PlanDataByCategory = {
+  BAHAN: BahanPlanData;
+  PAYROLL: PayrollPlanData;
+  BUILDING: SimpleItemsPlanData;
+  OPERASIONAL: SimpleItemsPlanData;
+  TRANSPORT: SimpleItemsPlanData;
+  PERLENGKAPAN: PerlengkapanPlanData;
+  MARKETING: MarketingPlanData;
+};
+
+type ApiPlanEntry<C extends FinanceCategory = FinanceCategory> = {
+  id: number;
+  category: C;
   amount: number;
-  data: any;
+  data: PlanDataByCategory[C];
+};
+
+type ApiActualEntry<C extends FinanceCategory = FinanceCategory> = {
+  id: number;
+  category: C;
+  amount: number;
+  data: PlanDataByCategory[C] | unknown;
+};
+
+type PlanEntryDraft<C extends FinanceCategory = FinanceCategory> = {
+  amount: number;
+  data: PlanDataByCategory[C];
 };
 
 type PlanDraftState = Partial<Record<FinanceCategory, PlanEntryDraft>>;
@@ -378,6 +413,21 @@ export default function FinancePlanPage() {
   const netMarginDisplay = actualRevenueTotal - totalDraftAmount;
   const pinjamModalDisplay = totalDraftAmount > totalOmsetPaid ? totalDraftAmount - totalOmsetPaid : 0;
   const bahanBudget = metrics?.bahanBudget ?? 0;
+
+  // Pembagian rekening (berdasarkan draft plan per kategori)
+  const amountBAHAN = draftEntries.BAHAN?.amount ?? 0;
+  const amountOPERASIONAL = draftEntries.OPERASIONAL?.amount ?? 0;
+  const amountTRANSPORT = draftEntries.TRANSPORT?.amount ?? 0;
+  const amountPERLENGKAPAN = draftEntries.PERLENGKAPAN?.amount ?? 0;
+  const amountPAYROLL = draftEntries.PAYROLL?.amount ?? 0;
+  const amountBUILDING = draftEntries.BUILDING?.amount ?? 0;
+  const amountMARKETING = draftEntries.MARKETING?.amount ?? 0;
+
+  const rekeningOperasionalTotal = amountBAHAN + amountOPERASIONAL + amountTRANSPORT + amountPERLENGKAPAN;
+  const rekeningPayrollBuildingTotal = amountPAYROLL + amountBUILDING;
+  const rekeningMarketingTotal = amountMARKETING;
+  // Sisa ke tabungan: hanya dari dana diterima (PAID), tidak termasuk dana tertahan
+  const rekeningTabunganTotal = Math.max(totalOmsetPaid - (rekeningOperasionalTotal + rekeningPayrollBuildingTotal + rekeningMarketingTotal), 0);
 
   const handleCategorySubmit = (category: FinanceCategory, entry: PlanEntryDraft) => {
     setDraftEntries((prev) => ({ ...prev, [category]: entry }));
@@ -718,6 +768,54 @@ export default function FinancePlanPage() {
       </section>
 
       <section className="space-y-3">
+        <div className="rounded-md border border-yellow-200 bg-yellow-50 p-3 text-sm text-gray-700">
+          <div className="font-medium mb-1">Pembagian Rekening</div>
+          <ul className="space-y-2">
+            <li>
+              <div className="flex items-start justify-between gap-3">
+                <span>
+                  <span className="font-medium">5485340804 - Haikal Hamizan Hazmi</span> (Rekening Operasional)
+                  <div className="text-xs text-gray-600">Kategori: Bahan, Operasional, Transport, Perlengkapan</div>
+                </span>
+                <span className="font-semibold whitespace-nowrap">{formatCurrency(rekeningOperasionalTotal)}</span>
+              </div>
+            </li>
+            <li>
+              <div className="flex items-start justify-between gap-3">
+                <span>
+                  <span className="font-medium">7105267037 - Haikal Hamizan Hazmi</span> (Rekening Payroll &amp; Building)
+                  <div className="text-xs text-gray-600">Kategori: Building, Payroll</div>
+                </span>
+                <span className="font-semibold whitespace-nowrap">{formatCurrency(rekeningPayrollBuildingTotal)}</span>
+              </div>
+            </li>
+            <li>
+              <div className="flex items-start justify-between gap-3">
+                <span>
+                  <span className="font-medium">2801721259 - Faaiz Fadlurahman Falih</span> (Marketing)
+                  <div className="text-xs text-gray-600">Kategori: Marketing</div>
+                </span>
+                <span className="font-semibold whitespace-nowrap">{formatCurrency(rekeningMarketingTotal)}</span>
+              </div>
+            </li>
+            <li>
+              <div className="flex items-start justify-between gap-3">
+                <span>
+                  <span className="font-medium">0343961275 - Sri Hayati</span> (Rekening Tabungan)
+                  <div className="text-xs text-gray-600">
+                    Sisa keuntungan setelah pembagian ditransfer ke sini. Hanya dana yang sudah diterima
+                    (tidak termasuk dana tertahan).
+                  </div>
+                </span>
+                <span className="font-semibold whitespace-nowrap">{formatCurrency(rekeningTabunganTotal)}</span>
+              </div>
+              <div className="text-xs text-gray-600 mt-1">
+                Contoh: profit Rp 1.000.000, sisa pembagian Rp 100.000 dan Rp 900.000 masih tertahan,
+                maka yang tercatat Rp 100.000.
+              </div>
+            </li>
+          </ul>
+        </div>
         <h2 className="font-semibold">Total Omset Diterima (Order status PAID)</h2>
         <Table>
           <TableHeader>
@@ -815,45 +913,59 @@ export default function FinancePlanPage() {
 }
 
 
-function PlanEntryDetails({ category, data }: { category: FinanceCategory; data: any }) {
+function PlanEntryDetails({ category, data }: { category: FinanceCategory; data: unknown }) {
   if (!data) return <span className="text-sm text-gray-500">-</span>;
 
   switch (category) {
     case "BAHAN":
       return (
         <div className="space-y-1 text-sm">
-          <div>Budget: {formatCurrency(data?.budget ?? 0)}</div>
-          <div>Kebutuhan: {formatCurrency(data?.kebutuhan ?? 0)}</div>
-          {typeof data?.differenceValue === "number" && (
-            <div>
-              {data.differenceType === "EKSPANSI" ? (
-                <Badge color="red">Ekspansi {formatCurrency(data.differenceValue)}</Badge>
-              ) : (
-                <Badge color="green">Sisa {formatCurrency(data.differenceValue)}</Badge>
-              )}
-            </div>
-          )}
+          {(() => {
+            const d = data as BahanPlanData;
+            return (
+              <>
+                <div>Budget: {formatCurrency(d?.budget ?? 0)}</div>
+                <div>Kebutuhan: {formatCurrency(d?.kebutuhan ?? 0)}</div>
+                {typeof d?.differenceValue === "number" && (
+                  <div>
+                    {d.differenceType === "EKSPANSI" ? (
+                      <Badge color="red">Ekspansi {formatCurrency(d.differenceValue)}</Badge>
+                    ) : (
+                      <Badge color="green">Sisa {formatCurrency(d.differenceValue)}</Badge>
+                    )}
+                  </div>
+                )}
+              </>
+            );
+          })()}
           <div className="text-xs text-gray-500 italic">Belum Termasuk Susu</div>
         </div>
       );
     case "PAYROLL":
       return (
         <div className="space-y-1 text-sm">
-          <div>Pokok: {formatCurrency(data?.baseSalary ?? 0)}</div>
-          <div>Overtime: {formatCurrency(data?.totalOvertime ?? 0)}</div>
-          <div>Total Payroll: {formatCurrency(data?.totalPayroll ?? 0)}</div>
-          {Array.isArray(data?.overtimeEntries) && data.overtimeEntries.length > 0 && (
-            <div>
-              <div className="text-xs text-gray-500">Detail Overtime:</div>
-              <ul className="text-xs text-gray-600 list-disc list-inside">
-                {data.overtimeEntries.map((entry: any, idx: number) => (
-                  <li key={`${entry?.name ?? idx}-${idx}`}>
-                    {entry?.name}: {formatCurrency(entry?.amount ?? 0)}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+          {(() => {
+            const d = data as PayrollPlanData;
+            return (
+              <>
+                <div>Pokok: {formatCurrency(d?.baseSalary ?? 0)}</div>
+                <div>Overtime: {formatCurrency(d?.totalOvertime ?? 0)}</div>
+                <div>Total Payroll: {formatCurrency(d?.totalPayroll ?? 0)}</div>
+                {Array.isArray(d?.overtimeEntries) && d.overtimeEntries.length > 0 && (
+                  <div>
+                    <div className="text-xs text-gray-500">Detail Overtime:</div>
+                    <ul className="text-xs text-gray-600 list-disc list-inside">
+                      {d.overtimeEntries.map((entry: PayrollOvertimeEntry, idx: number) => (
+                        <li key={`${entry?.name ?? idx}-${idx}`}>
+                          {entry?.name}: {formatCurrency(entry?.amount ?? 0)}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </>
+            );
+          })()}
         </div>
       );
     case "BUILDING":
@@ -861,32 +973,38 @@ function PlanEntryDetails({ category, data }: { category: FinanceCategory; data:
     case "TRANSPORT":
       return (
         <div className="text-sm text-gray-600">
-          {(data?.items || []).map((item: any, idx: number) => (
-            <div key={`${item?.name ?? idx}-${idx}`} className="flex justify-between gap-4">
-              <span>{item?.name}</span>
-              <span>{formatCurrency(item?.amount ?? 0)}</span>
-            </div>
-          ))}
+          {(() => {
+            const d = data as SimpleItemsPlanData;
+            return (d?.items || []).map((item: SimpleItem, idx: number) => (
+              <div key={`${item?.name ?? idx}-${idx}`} className="flex justify-between gap-4">
+                <span>{item?.name}</span>
+                <span>{formatCurrency(item?.amount ?? 0)}</span>
+              </div>
+            ));
+          })()}
         </div>
       );
     case "PERLENGKAPAN":
       return (
         <div className="text-sm text-gray-600">
-          {(data?.items || []).map((item: any, idx: number) => (
-            <div key={`${item?.name ?? idx}-${idx}`} className="flex justify-between gap-4">
-              <span>
-                <Badge className="mr-2" color={item?.type === "PRODUKSI" ? "green" : "gray"}>
-                  {item?.type}
-                </Badge>
-                {item?.name}
-              </span>
-              <span>{formatCurrency(item?.amount ?? 0)}</span>
-            </div>
-          ))}
+          {(() => {
+            const d = data as PerlengkapanPlanData;
+            return (d?.items || []).map((item: PerlengkapanItem, idx: number) => (
+              <div key={`${item?.name ?? idx}-${idx}`} className="flex justify-between gap-4">
+                <span>
+                  <Badge className="mr-2" color={item?.type === "PRODUKSI" ? "green" : "gray"}>
+                    {item?.type}
+                  </Badge>
+                  {item?.name}
+                </span>
+                <span>{formatCurrency(item?.amount ?? 0)}</span>
+              </div>
+            ));
+          })()}
         </div>
       );
     case "MARKETING":
-      return <div className="text-sm">Total: {formatCurrency(data?.value ?? 0)}</div>;
+      {const d = data as MarketingPlanData; return <div className="text-sm">Total: {formatCurrency(d?.value ?? 0)}</div>;}
     default:
       return <span className="text-sm text-gray-500">-</span>;
   }
@@ -948,7 +1066,7 @@ function BahanPlanForm({
   onCancel: () => void;
   onSubmit: (entry: PlanEntryDraft) => void;
 }) {
-  const initialData = initial?.data ?? {};
+  const initialData = (initial?.data ?? {}) as BahanPlanData;
   const [kebutuhan, setKebutuhan] = useState<string>(
     initialData?.kebutuhan ? String(initialData.kebutuhan) : initial ? String(initial.amount) : "",
   );
@@ -1021,13 +1139,13 @@ function PayrollPlanForm({
   onCancel: () => void;
   onSubmit: (entry: PlanEntryDraft) => void;
 }) {
-  const initialData = initial?.data ?? {};
+  const initialData = (initial?.data ?? {}) as PayrollPlanData;
   const [baseSalary, setBaseSalary] = useState<string>(
     initialData?.baseSalary ? String(initialData.baseSalary) : "8650000",
   );
   const [overtimeEntries, setOvertimeEntries] = useState<Array<{ name: string; amount: string }>>(
     Array.isArray(initialData?.overtimeEntries)
-      ? initialData.overtimeEntries.map((item: any) => ({
+      ? (initialData.overtimeEntries as PayrollOvertimeEntry[]).map((item) => ({
           name: item.name || "",
           amount: item.amount ? String(item.amount) : "",
         }))
@@ -1143,10 +1261,10 @@ function BuildingPlanForm({
     { name: "MASS", amount: 500000 },
     { name: "Store", amount: 2500000 },
   ];
-  const initialData = initial?.data ?? {};
+  const initialData = (initial?.data ?? {}) as SimpleItemsPlanData;
   const [items, setItems] = useState<Array<{ name: string; amount: string }>>(
     Array.isArray(initialData?.items)
-      ? initialData.items.map((item: any) => ({
+      ? (initialData.items as SimpleItem[]).map((item) => ({
           name: item.name || "",
           amount: item.amount ? String(item.amount) : "",
         }))
@@ -1253,10 +1371,10 @@ function SimpleListPlanForm({
   onCancel: () => void;
   onSubmit: (entry: PlanEntryDraft) => void;
 }) {
-  const initialData = initial?.data ?? {};
+  const initialData = (initial?.data ?? {}) as SimpleItemsPlanData;
   const [items, setItems] = useState<Array<{ name: string; amount: string }>>(
     Array.isArray(initialData?.items)
-      ? initialData.items.map((item: any) => ({
+      ? (initialData.items as SimpleItem[]).map((item) => ({
           name: item.name || "",
           amount: item.amount ? String(item.amount) : "",
         }))
@@ -1358,10 +1476,10 @@ function PerlengkapanPlanForm({
   onCancel: () => void;
   onSubmit: (entry: PlanEntryDraft) => void;
 }) {
-  const initialData = initial?.data ?? {};
+  const initialData = (initial?.data ?? {}) as PerlengkapanPlanData;
   const [items, setItems] = useState<Array<{ type: "PRODUKSI" | "OPERASIONAL"; name: string; amount: string }>>(
     Array.isArray(initialData?.items)
-      ? initialData.items.map((item: any) => ({
+      ? (initialData.items as PerlengkapanItem[]).map((item) => ({
           type: item.type === "OPERASIONAL" ? "OPERASIONAL" : "PRODUKSI",
           name: item.name || "",
           amount: item.amount ? String(item.amount) : "",
@@ -1501,7 +1619,7 @@ function MarketingPlanForm({
   onCancel: () => void;
   onSubmit: (entry: PlanEntryDraft) => void;
 }) {
-  const initialData = initial?.data ?? {};
+  const initialData = (initial?.data ?? {}) as MarketingPlanData;
   const [value, setValue] = useState<string>(
     initialData?.value ? String(initialData.value) : initial ? String(initial.amount) : "",
   );
