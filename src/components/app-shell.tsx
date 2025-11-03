@@ -20,7 +20,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
       { href: "/inventory", label: "Inventory", show: hasAccess(user, "inventory") },
       { href: "/orders", label: "Orders", show: hasAccess(user, "orders") },
       { href: "/delivery", label: "Delivery", show: hasAccess(user, "delivery") },
-      { href: "/finance", label: "Finance", show: hasAccess(user, "finance") },
+      // Finance will be shown as a grouped submenu below
       { href: "/attendance", label: "Attendance", show: hasAccess(user, "attendance") },
       { href: "/overtime", label: "Overtime", show: hasAccess(user, "overtime") },
       { href: "/overtime/approvals", label: "Overtime Approvals", show: hasAccess(user, "overtimeApprovals") },
@@ -32,6 +32,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
 
   const hideShell = pathname === "/login" || pathname === "/forgot";
   const [reportOpen, setReportOpen] = useState(() => pathname.startsWith("/reports"));
+  const [financeOpen, setFinanceOpen] = useState(() => pathname.startsWith("/finance"));
 
   if (hideShell) {
     return <>{children}</>;
@@ -53,6 +54,25 @@ export default function AppShell({ children }: { children: ReactNode }) {
               </Link>
             );
           })}
+          {hasAccess(user, "finance") && (
+            <div className="space-y-1">
+              <button
+                type="button"
+                className="w-full text-left block rounded px-3 py-2 text-sm hover:bg-white/10"
+                onClick={() => setFinanceOpen((v) => !v)}
+              >
+                Finance
+              </button>
+              {financeOpen && (
+                <div className="pl-3 space-y-1">
+                  <Link href="/finance/plan" className={`block rounded px-3 py-2 text-sm ${pathname === "/finance/plan" ? "bg-white text-black" : "hover:bg-white/10"}`}>Weekly Plan</Link>
+                  <Link href="/finance/actual" className={`block rounded px-3 py-2 text-sm ${pathname === "/finance/actual" ? "bg-white text-black" : "hover:bg-white/10"}`}>Weekly Actual</Link>
+                  <Link href="/finance/weeks" className={`block rounded px-3 py-2 text-sm ${pathname === "/finance/weeks" ? "bg-white text-black" : "hover:bg-white/10"}`}>Week Master</Link>
+                  <Link href="/finance/debt" className={`block rounded px-3 py-2 text-sm ${pathname === "/finance/debt" ? "bg-white text-black" : "hover:bg-white/10"}`}>Debt</Link>
+                </div>
+              )}
+            </div>
+          )}
           {hasAccess(user, "reports") && (
             <div className="space-y-1">
               <button
@@ -115,6 +135,17 @@ export default function AppShell({ children }: { children: ReactNode }) {
                 </Link>
               );
             })}
+            {hasAccess(user, "finance") && (
+              <div className="mt-2">
+                <div className="px-3 py-1 text-xs uppercase tracking-wide text-gray-500">Finance</div>
+                <div className="pl-2 space-y-1">
+                  <Link href="/finance/plan" onClick={() => setReportOpen(false)} className={`block rounded px-3 py-2 text-sm ${pathname === '/finance/plan' ? 'bg-black text-white' : 'bg-white text-black hover:bg-gray-100'}`}>Weekly Plan</Link>
+                  <Link href="/finance/actual" onClick={() => setReportOpen(false)} className={`block rounded px-3 py-2 text-sm ${pathname === '/finance/actual' ? 'bg-black text-white' : 'bg-white text-black hover:bg-gray-100'}`}>Weekly Actual</Link>
+                  <Link href="/finance/weeks" onClick={() => setReportOpen(false)} className={`block rounded px-3 py-2 text-sm ${pathname === '/finance/weeks' ? 'bg-black text-white' : 'bg-white text-black hover:bg-gray-100'}`}>Week Master</Link>
+                  <Link href="/finance/debt" onClick={() => setReportOpen(false)} className={`block rounded px-3 py-2 text-sm ${pathname === '/finance/debt' ? 'bg-black text-white' : 'bg-white text-black hover:bg-gray-100'}`}>Debt</Link>
+                </div>
+              </div>
+            )}
             {hasAccess(user, "reports") && (
               <div className="mt-2">
                 <div className="px-3 py-1 text-xs uppercase tracking-wide text-gray-500">Reports</div>

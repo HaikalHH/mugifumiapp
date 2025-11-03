@@ -190,6 +190,7 @@ model FinancePeriod {
   updatedAt DateTime            @updatedAt
   plans     FinancePlanEntry[]
   actuals   FinanceActualEntry[]
+  debts     FinanceDebtPayment[]
 
   week      FinanceWeek?        @relation(fields: [weekId], references: [id], onDelete: SetNull)
 
@@ -222,4 +223,19 @@ model FinanceActualEntry {
   period    FinancePeriod   @relation(fields: [periodId], references: [id], onDelete: Cascade)
 
   @@index([periodId, category])
+}
+
+// Record of debt repayments (terms) for each finance period/week
+model FinanceDebtPayment {
+  id        Int            @id @default(autoincrement())
+  periodId  Int
+  term      Int            // 1-based term number per period
+  amount    Int            // Rupiah
+  note      String?
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  period    FinancePeriod  @relation(fields: [periodId], references: [id], onDelete: Cascade)
+
+  @@index([periodId])
 }

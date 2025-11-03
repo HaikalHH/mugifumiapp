@@ -97,18 +97,24 @@ export default function ReportsFinancePage() {
                       <TableRow>
                         <TableHead>Kategori</TableHead>
                         <TableHead className="text-right">Jumlah (Rp)</TableHead>
+                        <TableHead className="text-right">Persen</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {r.plan.byCategory.map((c, idx) => (
-                        <TableRow key={idx}>
-                          <TableCell>{c.category}</TableCell>
-                          <TableCell className="text-right">Rp {Math.round(c.amount).toLocaleString('id-ID')}</TableCell>
-                        </TableRow>
-                      ))}
+                      {r.plan.byCategory.map((c, idx) => {
+                        const pct = r.plan.total > 0 ? (c.amount / r.plan.total) * 100 : 0;
+                        return (
+                          <TableRow key={idx}>
+                            <TableCell>{c.category}</TableCell>
+                            <TableCell className="text-right">Rp {Math.round(c.amount).toLocaleString('id-ID')}</TableCell>
+                            <TableCell className="text-right">{pct.toFixed(1)}%</TableCell>
+                          </TableRow>
+                        );
+                      })}
                       <TableRow>
                         <TableCell className="font-medium">Total</TableCell>
                         <TableCell className="text-right font-semibold">Rp {Math.round(r.plan.total).toLocaleString('id-ID')}</TableCell>
+                        <TableCell className="text-right font-semibold">{r.plan.total > 0 ? '100.0%' : '-'}</TableCell>
                       </TableRow>
                     </TableBody>
                   </Table>
@@ -120,18 +126,24 @@ export default function ReportsFinancePage() {
                       <TableRow>
                         <TableHead>Kategori</TableHead>
                         <TableHead className="text-right">Jumlah (Rp)</TableHead>
+                        <TableHead className="text-right">Persen</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {r.actual.byCategory.map((c, idx) => (
-                        <TableRow key={idx}>
-                          <TableCell>{c.category}</TableCell>
-                          <TableCell className="text-right">Rp {Math.round(c.amount).toLocaleString('id-ID')}</TableCell>
-                        </TableRow>
-                      ))}
+                      {r.actual.byCategory.map((c, idx) => {
+                        const pct = r.actual.total > 0 ? (c.amount / r.actual.total) * 100 : 0;
+                        return (
+                          <TableRow key={idx}>
+                            <TableCell>{c.category}</TableCell>
+                            <TableCell className="text-right">Rp {Math.round(c.amount).toLocaleString('id-ID')}</TableCell>
+                            <TableCell className="text-right">{pct.toFixed(1)}%</TableCell>
+                          </TableRow>
+                        );
+                      })}
                       <TableRow>
                         <TableCell className="font-medium">Total</TableCell>
                         <TableCell className="text-right font-semibold">Rp {Math.round(r.actual.total).toLocaleString('id-ID')}</TableCell>
+                        <TableCell className="text-right font-semibold">{r.actual.total > 0 ? '100.0%' : '-'}</TableCell>
                       </TableRow>
                     </TableBody>
                   </Table>
@@ -141,11 +153,27 @@ export default function ReportsFinancePage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="border rounded p-3">
                   <div className="text-sm text-gray-600">Net Profit (Plan)</div>
-                  <div className="text-xl font-semibold">Rp {Math.round(r.netProfitPlan).toLocaleString('id-ID')}</div>
+                  {(() => {
+                    const pct = r.actualRevenue > 0 ? (r.netProfitPlan / r.actualRevenue) * 100 : 0;
+                    const color = r.netProfitPlan < 0 ? 'text-red-600' : (r.netProfitPlan > 0 ? 'text-green-600' : '');
+                    return (
+                      <div className={`text-xl font-semibold ${color}`}>
+                        Rp {Math.round(r.netProfitPlan).toLocaleString('id-ID')} <span className="text-sm opacity-80">({pct.toFixed(1)}%)</span>
+                      </div>
+                    );
+                  })()}
                 </div>
                 <div className="border rounded p-3">
                   <div className="text-sm text-gray-600">Net Profit (Actual)</div>
-                  <div className="text-xl font-semibold">Rp {Math.round(r.netProfitActual).toLocaleString('id-ID')}</div>
+                  {(() => {
+                    const pct = r.actualRevenue > 0 ? (r.netProfitActual / r.actualRevenue) * 100 : 0;
+                    const color = r.netProfitActual < 0 ? 'text-red-600' : (r.netProfitActual > 0 ? 'text-green-600' : '');
+                    return (
+                      <div className={`text-xl font-semibold ${color}`}>
+                        Rp {Math.round(r.netProfitActual).toLocaleString('id-ID')} <span className="text-sm opacity-80">({pct.toFixed(1)}%)</span>
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             </section>
