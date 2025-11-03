@@ -13,8 +13,8 @@ export default function HomePage() {
 
   useEffect(() => {
     if (!user) return;
-    if (user.role === "Manager") router.replace("/reports/sales");
-    else router.replace("/dashboard");
+    // Default landing page for all roles is Dashboard (including Manager)
+    router.replace("/dashboard");
   }, [user, router]);
   return (
     <main className="p-6 space-y-6">
