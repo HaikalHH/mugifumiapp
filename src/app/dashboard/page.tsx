@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useAuth, lockedLocation, hasRole } from "../providers";
 import Link from "next/link";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui/table";
+import { Label } from "../../components/ui/label";
 
 type StockInfo = { total: number; reserved: number; available: number };
 
@@ -15,6 +16,13 @@ export default function DashboardPage() {
   const [baseAfterPenalty, setBaseAfterPenalty] = useState<number | null>(null);
   const [overtimePay, setOvertimePay] = useState<number | null>(null);
   const [monthBonus, setMonthBonus] = useState<number | null>(null);
+  const [yearly, setYearly] = useState<null | {
+    year: number;
+    months: Array<{ month: number; income: number; expense: number; profit: number }>;
+    totalIncome: number;
+    totalExpense: number;
+    totalProfit: number;
+  }>(null);
 
   const monthStr = useMemo(() => {
     const d = new Date();
@@ -99,6 +107,35 @@ export default function DashboardPage() {
       );
     }
 
+    // Admin/Manager annual summary
+    if (hasRole(user, "Admin") || hasRole(user, "Manager")) {
+      const yearNow = new Date().getFullYear();
+      tasks.push(
+        fetch(`/api/finance/report?year=${yearNow}`)
+          .then((r) => r.json())
+          .then((d) => {
+            const reports = Array.isArray(d.reports) ? d.reports : [];
+            const monthsMap = new Map<number, { month: number; income: number; expense: number; profit: number }>();
+            for (let m = 1; m <= 12; m++) monthsMap.set(m, { month: m, income: 0, expense: 0, profit: 0 });
+            for (const rp of reports) {
+              const m = Number(rp.month || new Date(rp.startDate).getMonth() + 1);
+              const slot = monthsMap.get(m)!;
+              const income = Number(rp.actualRevenue || 0);
+              const expense = Number(rp.actual?.total || 0);
+              slot.income += income;
+              slot.expense += expense;
+              slot.profit += (income - expense);
+            }
+            const months = Array.from(monthsMap.values()).filter(x => x.income || x.expense || x.profit);
+            const totalIncome = months.reduce((s, x) => s + x.income, 0);
+            const totalExpense = months.reduce((s, x) => s + x.expense, 0);
+            const totalProfit = months.reduce((s, x) => s + x.profit, 0);
+            setYearly({ year: yearNow, months, totalIncome, totalExpense, totalProfit });
+          })
+          .catch(() => setYearly(null))
+      );
+    }
+
     Promise.all(tasks);
   }, [user, monthStr]);
 
@@ -107,6 +144,60 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold">Dashboard</h1>
+
+      {(hasRole(user, "Admin") || hasRole(user, "Manager")) && yearly && (
+        <section className="space-y-3">
+          <div className="flex items-end justify-between">
+            <div className="font-medium">Ringkasan Finance Tahun {yearly.year}</div>
+            <div className="text-sm text-gray-600">Actual-based</div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="border rounded p-3">
+              <Label>Pemasukan (Actual)</Label>
+              <div className="text-lg font-semibold">Rp {yearly.totalIncome.toLocaleString('id-ID')}</div>
+            </div>
+            <div className="border rounded p-3">
+              <Label>Pengeluaran (Actual)</Label>
+              <div className="text-lg font-semibold">Rp {yearly.totalExpense.toLocaleString('id-ID')}</div>
+            </div>
+            <div className="border rounded p-3">
+              <Label>Net (Untung/Rugi)</Label>
+              <div className={`text-lg font-semibold ${yearly.totalProfit < 0 ? 'text-red-600' : yearly.totalProfit > 0 ? 'text-green-600' : ''}`}>
+                Rp {yearly.totalProfit.toLocaleString('id-ID')}
+              </div>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <Table className="min-w-[720px] md:min-w-0">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Bulan</TableHead>
+                  <TableHead className="text-right">Pemasukan</TableHead>
+                  <TableHead className="text-right">Pengeluaran</TableHead>
+                  <TableHead className="text-right">Untung/Rugi</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {yearly.months.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={4} className="text-center text-sm text-gray-600">Belum ada data tahun ini</TableCell>
+                  </TableRow>
+                )}
+                {yearly.months.map((m) => (
+                  <TableRow key={m.month}>
+                    <TableCell>{String(m.month).padStart(2,'0')}</TableCell>
+                    <TableCell className="text-right">Rp {Math.round(m.income).toLocaleString('id-ID')}</TableCell>
+                    <TableCell className="text-right">Rp {Math.round(m.expense).toLocaleString('id-ID')}</TableCell>
+                    <TableCell className={`text-right ${m.profit < 0 ? 'text-red-600' : m.profit > 0 ? 'text-green-600' : ''}`}>
+                      Rp {Math.round(m.profit).toLocaleString('id-ID')}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </section>
+      )}
 
       {(hasRole(user, "Bandung") || hasRole(user, "Jakarta")) && (
         <div className="space-y-4">
