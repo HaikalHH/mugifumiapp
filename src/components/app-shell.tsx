@@ -35,6 +35,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const hideShell = pathname === "/login" || pathname === "/forgot";
   const [reportOpen, setReportOpen] = useState(() => pathname.startsWith("/reports"));
   const [financeOpen, setFinanceOpen] = useState(() => pathname.startsWith("/finance"));
+  const [planningOpen, setPlanningOpen] = useState(() => pathname.startsWith("/planning"));
 
   if (hideShell) {
     return <>{children}</>;
@@ -71,6 +72,24 @@ export default function AppShell({ children }: { children: ReactNode }) {
                   <Link href="/finance/actual" className={`block rounded px-3 py-2 text-sm ${pathname === "/finance/actual" ? "bg-white text-black" : "hover:bg-white/10"}`}>Weekly Actual</Link>
                   <Link href="/finance/weeks" className={`block rounded px-3 py-2 text-sm ${pathname === "/finance/weeks" ? "bg-white text-black" : "hover:bg-white/10"}`}>Week Master</Link>
                   <Link href="/finance/debt" className={`block rounded px-3 py-2 text-sm ${pathname === "/finance/debt" ? "bg-white text-black" : "hover:bg-white/10"}`}>Debt</Link>
+                </div>
+              )}
+            </div>
+          )}
+          {hasAccess(user, "planning") && (
+            <div className="space-y-1 mt-1">
+              <button
+                type="button"
+                className="w-full text-left block rounded px-3 py-2 text-sm hover:bg-white/10"
+                onClick={() => setPlanningOpen((v) => !v)}
+              >
+                Planning Helper
+              </button>
+              {planningOpen && (
+                <div className="pl-3 space-y-1">
+                  <Link href="/planning/recipe" className={`block rounded px-3 py-2 text-sm ${pathname === "/planning/recipe" ? "bg-white text-black" : "hover:bg-white/10"}`}>Recipe</Link>
+                  <Link href="/planning/ingredients" className={`block rounded px-3 py-2 text-sm ${pathname === "/planning/ingredients" ? "bg-white text-black" : "hover:bg-white/10"}`}>Bahan</Link>
+                  <Link href="/planning/bahan" className={`block rounded px-3 py-2 text-sm ${pathname === "/planning/bahan" ? "bg-white text-black" : "hover:bg-white/10"}`}>Planning Bahan</Link>
                 </div>
               )}
             </div>
@@ -145,6 +164,16 @@ export default function AppShell({ children }: { children: ReactNode }) {
                   <Link href="/finance/actual" onClick={() => setReportOpen(false)} className={`block rounded px-3 py-2 text-sm ${pathname === '/finance/actual' ? 'bg-black text-white' : 'bg-white text-black hover:bg-gray-100'}`}>Weekly Actual</Link>
                   <Link href="/finance/weeks" onClick={() => setReportOpen(false)} className={`block rounded px-3 py-2 text-sm ${pathname === '/finance/weeks' ? 'bg-black text-white' : 'bg-white text-black hover:bg-gray-100'}`}>Week Master</Link>
                   <Link href="/finance/debt" onClick={() => setReportOpen(false)} className={`block rounded px-3 py-2 text-sm ${pathname === '/finance/debt' ? 'bg-black text-white' : 'bg-white text-black hover:bg-gray-100'}`}>Debt</Link>
+                </div>
+              </div>
+            )}
+            {hasAccess(user, "planning") && (
+              <div className="mt-2">
+                <div className="px-3 py-1 text-xs uppercase tracking-wide text-gray-500">Planning Helper</div>
+                <div className="pl-2 space-y-1">
+                  <Link href="/planning/recipe" onClick={() => setReportOpen(false)} className={`block rounded px-3 py-2 text-sm ${pathname === '/planning/recipe' ? 'bg-black text-white' : 'bg-white text-black hover:bg-gray-100'}`}>Recipe</Link>
+                  <Link href="/planning/ingredients" onClick={() => setReportOpen(false)} className={`block rounded px-3 py-2 text-sm ${pathname === '/planning/ingredients' ? 'bg-black text-white' : 'bg-white text-black hover:bg-gray-100'}`}>Bahan</Link>
+                  <Link href="/planning/bahan" onClick={() => setReportOpen(false)} className={`block rounded px-3 py-2 text-sm ${pathname === '/planning/bahan' ? 'bg-black text-white' : 'bg-white text-black hover:bg-gray-100'}`}>Planning Bahan</Link>
                 </div>
               </div>
             )}

@@ -94,7 +94,8 @@ export function hasAccess(
     | "overtimeApprovals"
     | "payroll"
     | "slip"
-    | "bonus",
+    | "bonus"
+    | "planning",
 ): boolean {
   if (!user) return false;
   const roles = new Set(roleTokens(user.role as string));
@@ -103,7 +104,8 @@ export function hasAccess(
   if (roles.has("admin")) {
     if (page === "attendance" || page === "overtime") return false;
     if (page === "slip") return false; // slip gaji bukan untuk Admin
-    return true; // products, inventory, orders, delivery, reports, finance, users, overtimeApprovals, payroll
+    if (page === "planning") return false; // Planning only for Baker & Manager
+    return true; // products, inventory, orders, delivery, reports, finance, users, overtimeApprovals, payroll, bonus
   }
 
   // Staff-only menus
@@ -112,9 +114,9 @@ export function hasAccess(
   if (page === "overtimeApprovals" || page === "payroll" || page === "users" || page === "bonus") return false;
 
   // Existing menus by role
-  if (roles.has("manager")) return page === "reports";
+  if (roles.has("manager")) return page === "reports" || page === "planning";
   if (roles.has("sales")) return page === "inventory" || page === "orders";
-  if (roles.has("baker")) return page === "inventory" || page === "slip";
+  if (roles.has("baker")) return page === "inventory" || page === "slip" || page === "planning";
   if (roles.has("bandung") || roles.has("jakarta")) {
     if (page === "inventory" || page === "delivery") return true;
     if (page === "slip") return true;

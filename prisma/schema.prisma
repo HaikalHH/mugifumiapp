@@ -71,6 +71,7 @@ model Product {
   sales         SaleItem[]
   orderItems    OrderItem[]
   deliveryItems DeliveryItem[]
+  recipeItems   RecipeItem[]
 }
 
 model Inventory {
@@ -155,6 +156,36 @@ model DeliveryItem {
   price       Int
   product     Product   @relation(fields: [productId], references: [id])
   delivery    Delivery  @relation(fields: [deliveryId], references: [id])
+}
+
+// Ingredient master data (bahan)
+model Ingredient {
+  id        Int          @id @default(autoincrement())
+  code      String       @unique
+  name      String
+  unit      String       // gram | liter
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  recipeItems RecipeItem[]
+}
+
+// Recipe item per product per 1 kg output
+model RecipeItem {
+  id            Int        @id @default(autoincrement())
+  productId     Int
+  ingredientId  Int
+  amountPerKg   Float      // amount needed per 1 kg of product
+  unit          String     // duplicate for clarity, e.g. gram | liter
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  product     Product    @relation(fields: [productId], references: [id])
+  ingredient  Ingredient @relation(fields: [ingredientId], references: [id])
+
+  @@unique([productId, ingredientId])
+  @@index([productId])
+  @@index([ingredientId])
 }
 
 enum FinanceCategory {
