@@ -6,7 +6,7 @@ import { Label } from "../../../components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../components/ui/select";
 import { Button } from "../../../components/ui/button";
 
-type Product = { id: number; code: string; name: string };
+type Product = { id: number; name: string };
 type Ingredient = { id: number; code: string; name: string; unit: string };
 type RecipeItem = { ingredient: Ingredient; amountPerKg: number; unit: string };
 
@@ -18,7 +18,7 @@ export default function PlanningBahanPage() {
   const [selected, setSelected] = useState<{ productId: number; kg: number }[]>([]);
 
   const loadProducts = useCallback(async () => {
-    const res = await fetch('/api/products');
+    const res = await fetch('/api/plan-products');
     setProducts(await res.json());
   }, []);
 
@@ -32,7 +32,7 @@ export default function PlanningBahanPage() {
     })();
   }, [loadProducts]);
 
-  const productOptions = useMemo(() => products.map(p => ({ value: String(p.id), label: `${p.name} (${p.code})` })), [products]);
+  const productOptions = useMemo(() => products.map(p => ({ value: String(p.id), label: p.name })), [products]);
 
   const recipeMap = useMemo(() => {
     const m = new Map<number, RecipeItem[]>();
@@ -106,7 +106,7 @@ export default function PlanningBahanPage() {
               const p = products.find(pp => pp.id === s.productId);
               return (
                 <TableRow key={s.productId}>
-                  <TableCell>{p ? `${p.name} (${p.code})` : s.productId}</TableCell>
+                  <TableCell>{p ? p.name : s.productId}</TableCell>
                   <TableCell className="text-right">
                     <Input type="number" step="0.1" value={s.kg}
                       onChange={(e) => setSelected(prev => prev.map(x => x.productId === s.productId ? { ...x, kg: Number(e.target.value) } : x))}

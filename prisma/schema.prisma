@@ -71,7 +71,16 @@ model Product {
   sales         SaleItem[]
   orderItems    OrderItem[]
   deliveryItems DeliveryItem[]
-  recipeItems   RecipeItem[]
+}
+
+// Separate master data for planning helper
+model PlanProduct {
+  id         Int          @id @default(autoincrement())
+  name       String
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  recipeItems RecipeItem[]
 }
 
 model Inventory {
@@ -180,7 +189,7 @@ model RecipeItem {
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
 
-  product     Product    @relation(fields: [productId], references: [id])
+  product     PlanProduct @relation(fields: [productId], references: [id])
   ingredient  Ingredient @relation(fields: [ingredientId], references: [id])
 
   @@unique([productId, ingredientId])

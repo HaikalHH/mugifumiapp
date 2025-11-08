@@ -14,7 +14,7 @@ export async function GET() {
           amountPerKg: true,
           unit: true,
           ingredient: { select: { id: true, code: true, name: true, unit: true } },
-          product: { select: { id: true, code: true, name: true } },
+          product: { select: { id: true, name: true } },
         },
         orderBy: [{ productId: 'asc' }, { id: 'asc' }]
       });
@@ -73,7 +73,7 @@ export async function POST(req: NextRequest) {
             amountPerKg: true,
             unit: true,
             ingredient: { select: { id: true, code: true, name: true, unit: true } },
-            product: { select: { id: true, code: true, name: true } },
+            product: { select: { id: true, name: true } },
           },
           orderBy: { id: 'asc' }
         });
@@ -87,4 +87,3 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(createErrorResponse("upsert recipe", error), { status: 500 });
   }
 }
-

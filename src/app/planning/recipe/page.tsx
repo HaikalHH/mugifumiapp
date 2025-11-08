@@ -7,11 +7,11 @@ import { Input } from "../../../components/ui/input";
 import { Label } from "../../../components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../components/ui/select";
 
-type Product = { id: number; code: string; name: string };
+type Product = { id: number; name: string };
 type Ingredient = { id: number; code: string; name: string; unit: string };
 
 type RecipeGroup = {
-  product: { id: number; code: string; name: string };
+  product: { id: number; name: string };
   items: { id: number; ingredient: Ingredient; amountPerKg: number; unit: string }[];
 };
 
@@ -28,7 +28,7 @@ export default function RecipePage() {
 
   const load = useCallback(async () => {
     const [pRes, iRes, rRes] = await Promise.all([
-      fetch('/api/products'),
+      fetch('/api/plan-products'),
       fetch('/api/ingredients'),
       fetch('/api/recipes'),
     ]);
@@ -39,7 +39,7 @@ export default function RecipePage() {
 
   useEffect(() => { load(); }, [load]);
 
-  const productOptions = useMemo(() => products.map(p => ({ value: String(p.id), label: `${p.name} (${p.code})` })), [products]);
+  const productOptions = useMemo(() => products.map(p => ({ value: String(p.id), label: p.name })), [products]);
   const ingredientOptions = useMemo(() => ingredients.map(i => ({ value: String(i.id), label: `${i.name} (${i.code})` })), [ingredients]);
 
 
@@ -105,7 +105,7 @@ export default function RecipePage() {
             <TableRow key={rg.product.id}>
               <TableCell className="align-top">
                 <div className="flex items-center justify-between">
-                  <span>{rg.product.name} ({rg.product.code})</span>
+                  <span>{rg.product.name}</span>
                   <span className="flex gap-2 ml-4">
                     <Button variant="link" className="p-0 h-auto" onClick={() => openEdit(rg.product.id)}>Edit</Button>
                     <Button variant="link" className="text-red-600 p-0 h-auto" onClick={() => clearRecipe(rg.product.id)}>Clear</Button>

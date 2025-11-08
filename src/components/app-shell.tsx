@@ -17,6 +17,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
       // Home removed; default route goes to Dashboard
       { href: "/dashboard", label: "Dashboard", show: Boolean(user) },
       { href: "/products", label: "Products", show: hasAccess(user, "products") },
+      { href: "/plan-products", label: "Products Plan", show: hasAccess(user, "planProducts") },
       { href: "/inventory", label: "Inventory", show: hasAccess(user, "inventory") },
       { href: "/orders", label: "Orders", show: hasAccess(user, "orders") },
       { href: "/delivery", label: "Delivery", show: hasAccess(user, "delivery") },

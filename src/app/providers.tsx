@@ -83,6 +83,7 @@ export function hasAccess(
   user: AppUser | null,
   page:
     | "products"
+    | "planProducts"
     | "inventory"
     | "orders"
     | "delivery"
@@ -99,6 +100,10 @@ export function hasAccess(
 ): boolean {
   if (!user) return false;
   const roles = new Set(roleTokens(user.role as string));
+
+  if (page === "planProducts") {
+    return roles.has("admin");
+  }
 
   // Admin: no Attendance or Overtime (staff feature). Has approvals + payroll and others.
   if (roles.has("admin")) {
