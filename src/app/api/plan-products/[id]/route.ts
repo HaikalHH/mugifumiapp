@@ -11,6 +11,40 @@ async function getId(params: Promise<{ id: string }>) {
   return planProductId;
 }
 
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    logRouteStart("plan-products-detail");
+    let planProductId: number;
+    try {
+      planProductId = await getId(params);
+    } catch (error) {
+      if ((error as Error).message === "INVALID_ID") {
+        return NextResponse.json({ error: "Invalid plan product ID" }, { status: 400 });
+      }
+      throw error;
+    }
+
+    const product = await withRetry(
+      () =>
+        prisma.planProduct.findUnique({
+          where: { id: planProductId },
+          select: { id: true, name: true, createdAt: true, updatedAt: true },
+        }),
+      2,
+      "plan-products-detail",
+    );
+
+    if (!product) {
+      return NextResponse.json({ error: "Plan product not found" }, { status: 404 });
+    }
+
+    logRouteComplete("plan-products-detail", 1);
+    return NextResponse.json(product);
+  } catch (error) {
+    return NextResponse.json(createErrorResponse("get plan product", error), { status: 500 });
+  }
+}
+
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     logRouteStart("plan-products-update");

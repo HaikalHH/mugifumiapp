@@ -42,39 +42,31 @@ export default function RecipePage() {
         <TableHeader>
           <TableRow>
             <TableHead className="text-left">Product</TableHead>
-            <TableHead className="text-left">Ingredients</TableHead>
+            <TableHead className="text-center">Total Ingredients</TableHead>
+            <TableHead className="text-right">Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {recipes.map((rg) => (
             <TableRow key={rg.product.id}>
-              <TableCell className="align-top">
-                <div className="flex items-center justify-between gap-2">
-                  <span>{rg.product.name}</span>
-                  <span className="flex gap-2">
-                    <Button variant="link" className="p-0 h-auto" asChild>
-                      <Link href={`/planning/recipe/${rg.product.id}/edit`}>Edit</Link>
-                    </Button>
-                    <Button variant="link" className="text-red-600 p-0 h-auto" onClick={() => clearRecipe(rg.product.id)}>Clear</Button>
-                  </span>
+              <TableCell className="align-middle">{rg.product.name}</TableCell>
+              <TableCell className="text-center">{rg.items.length}</TableCell>
+              <TableCell className="text-right">
+                <div className="flex items-center justify-end gap-3">
+                  <Button variant="link" className="p-0 h-auto" asChild>
+                    <Link href={`/planning/recipe/${rg.product.id}`}>View</Link>
+                  </Button>
+                  <Button variant="link" className="p-0 h-auto" asChild>
+                    <Link href={`/planning/recipe/${rg.product.id}/edit`}>Edit</Link>
+                  </Button>
+                  <Button variant="link" className="text-red-600 p-0 h-auto" onClick={() => clearRecipe(rg.product.id)}>Clear</Button>
                 </div>
-              </TableCell>
-              <TableCell>
-                {rg.items.length === 0 ? (
-                  <span className="text-gray-500">No items</span>
-                ) : (
-                  <div className="space-y-1">
-                    {rg.items.map((it) => (
-                      <div key={it.id} className="text-sm">• {it.ingredient.name} ({it.ingredient.code}) — {it.amountPerKg} {it.unit} / kg</div>
-                    ))}
-                  </div>
-                )}
               </TableCell>
             </TableRow>
           ))}
           {recipes.length === 0 && (
             <TableRow>
-              <TableCell colSpan={2} className="text-center text-gray-500">Belum ada recipe.</TableCell>
+              <TableCell colSpan={3} className="text-center text-gray-500">Belum ada recipe.</TableCell>
             </TableRow>
           )}
         </TableBody>
