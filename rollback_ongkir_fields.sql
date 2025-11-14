@@ -4,3 +4,4 @@ ALTER TABLE "Delivery" DROP COLUMN IF EXISTS "ongkirActual";
 
 
 
+

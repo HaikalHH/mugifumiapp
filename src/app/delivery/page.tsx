@@ -30,6 +30,8 @@ type Order = {
     id: number;
     status: string;
     deliveryDate: string | null;
+    ongkirPlan?: number | null;
+    ongkirActual?: number | null;
     items: Array<{
       id: number;
       productId: number;
@@ -46,6 +48,8 @@ type Order = {
     id: number;
     status: string;
     deliveryDate: string | null;
+    ongkirPlan?: number | null;
+    ongkirActual?: number | null;
     items: Array<{
       id: number;
       productId: number;
@@ -66,6 +70,8 @@ type Delivery = {
   deliveryDate: string | null;
   status: string;
   createdAt: string;
+  ongkirPlan?: number | null;
+  ongkirActual?: number | null;
   order: Order;
   items: Array<{
     id: number;
@@ -84,6 +90,14 @@ import { useAuth } from "../providers";
 
 export default function DeliveryPage() {
   const { user } = useAuth();
+
+  const formatCurrency = (value?: number | null) => {
+    if (value === null || value === undefined) {
+      return "";
+    }
+    return `Rp ${value.toLocaleString("id-ID")}`;
+  };
+
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const [pendingOrders, setPendingOrders] = useState<Order[]>([]);
   const [pendingOrdersLoading, setPendingOrdersLoading] = useState(true);
@@ -183,8 +197,8 @@ export default function DeliveryPage() {
     if (deliveryData) {
       setForm({
         deliveryDate: deliveryData.deliveryDate ? new Date(deliveryData.deliveryDate) : new Date(),
-        ongkirPlan: "",
-        ongkirActual: "",
+        ongkirPlan: formatCurrency(deliveryData.ongkirPlan),
+        ongkirActual: formatCurrency(deliveryData.ongkirActual),
       });
       
       if (deliveryData.items && deliveryData.items.length > 0) {
@@ -560,6 +574,8 @@ export default function DeliveryPage() {
                             id: delivery.id,
                             status: delivery.status,
                             deliveryDate: delivery.deliveryDate,
+                            ongkirPlan: delivery.ongkirPlan,
+                            ongkirActual: delivery.ongkirActual,
                             items: delivery.items
                           }
                         };
