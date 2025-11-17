@@ -258,8 +258,13 @@ export async function GET(req: NextRequest) {
             (order.actPayout || 0);
           
           if (actualAmount > 0) {
-            const current = outletMap.get(order.outlet) || 0;
-            outletMap.set(order.outlet, current + actualAmount);
+            const location = (order.location || "").trim();
+            // Split Tokopedia by location so Jakarta & Bandung are shown separately in Dana Diterima
+            const outletKey = order.outlet.toLowerCase() === "tokopedia" && location
+              ? `${order.outlet} ${location}`
+              : order.outlet;
+            const current = outletMap.get(outletKey) || 0;
+            outletMap.set(outletKey, current + actualAmount);
           }
         }
       }
