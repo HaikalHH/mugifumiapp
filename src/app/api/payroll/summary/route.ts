@@ -76,7 +76,26 @@ export async function GET(req: Request) {
       const u = byUser[b.userId];
       if (u) u.bonus = (u.bonus || 0) + (b.amount || 0);
     }
-    return NextResponse.json({ month: `${y}-${String(m).padStart(2, "0")}`, users: Object.values(byUser) });
+    const overtimeDetails = overtime.map((o) => {
+      const mins = Math.max(0, Math.round((o.endAt.getTime() - o.startAt.getTime()) / 60000));
+      const user = byUser[o.userId]?.user;
+      const hourlyRate = user?.hourlyRate ?? 0;
+      return {
+        id: o.id,
+        userId: o.userId,
+        userName: user?.name ?? `User #${o.userId}`,
+        startAt: o.startAt,
+        endAt: o.endAt,
+        minutes: mins,
+        pay: Math.round((mins * hourlyRate) / 60),
+      };
+    });
+
+    return NextResponse.json({
+      month: `${y}-${String(m).padStart(2, "0")}`,
+      users: Object.values(byUser),
+      overtimeDetails,
+    });
   } catch (error) {
     return NextResponse.json({ error: "Gagal membuat ringkasan payroll" }, { status: 500 });
   }
