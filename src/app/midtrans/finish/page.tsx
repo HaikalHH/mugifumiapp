@@ -1,18 +1,51 @@
+import { redirect } from "next/navigation";
 import { MidtransResultCard } from "../_components/midtrans-result-card";
 
 type SearchParams = {
   order_id?: string | string[];
   gross_amount?: string | string[];
+  transaction_status?: string | string[];
+  status_code?: string | string[];
 };
 
 function toStringValue(value?: string | string[]) {
   return typeof value === "string" ? value : undefined;
 }
 
+function buildQuery(orderId?: string, grossAmount?: string) {
+  const params = new URLSearchParams();
+  if (orderId) params.set("order_id", orderId);
+  if (grossAmount) params.set("gross_amount", grossAmount);
+  const qs = params.toString();
+  return qs ? `?${qs}` : "";
+}
+
 export default async function MidtransFinishPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const params = await searchParams;
   const orderId = toStringValue(params?.order_id);
   const grossAmount = toStringValue(params?.gross_amount);
+  const transactionStatus = toStringValue(params?.transaction_status)?.toLowerCase();
+  const statusCode = toStringValue(params?.status_code);
+
+  const pending =
+    transactionStatus === "pending" ||
+    transactionStatus === "challenge" ||
+    (!transactionStatus && statusCode === "201");
+  if (pending) {
+    redirect(`/midtrans/pending${buildQuery(orderId, grossAmount)}`);
+  }
+
+  const errored =
+    transactionStatus === "deny" ||
+    transactionStatus === "cancel" ||
+    transactionStatus === "expire" ||
+    transactionStatus === "failure" ||
+    transactionStatus === "error" ||
+    (!transactionStatus && statusCode && statusCode !== "200");
+  if (errored) {
+    redirect(`/midtrans/error${buildQuery(orderId, grossAmount)}`);
+  }
+
   const whatsappMessage = `Halo Kak, saya sudah menyelesaikan pembayaran untuk order ${orderId ? `#${orderId}` : ""}. Mohon dibantu prosesnya ya 🙏`;
 
   return (
