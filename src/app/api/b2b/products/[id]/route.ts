@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "../../../../../lib/prisma";
 import { withRetry, createErrorResponse, logRouteStart, logRouteComplete } from "../../../../../lib/db-utils";
 
-export async function PUT(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function PUT(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const id = Number(params.id);
+    const { id: idParam } = await params;
+    const id = Number(idParam);
     if (!id) return NextResponse.json({ error: "Invalid id" }, { status: 400 });
     logRouteStart("b2b-products-update", { id });
     const body = await _req.json();
@@ -40,9 +41,10 @@ export async function PUT(_req: NextRequest, { params }: { params: { id: string 
   }
 }
 
-export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const id = Number(params.id);
+    const { id: idParam } = await params;
+    const id = Number(idParam);
     if (!id) return NextResponse.json({ error: "Invalid id" }, { status: 400 });
     logRouteStart("b2b-products-delete", { id });
     await withRetry(async () => prisma.productB2B.delete({ where: { id } }), 2, "b2b-products-delete");

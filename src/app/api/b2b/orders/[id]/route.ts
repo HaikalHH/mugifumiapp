@@ -27,9 +27,10 @@ const ORDER_SELECT = {
   },
 } as const;
 
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const id = Number(params.id);
+    const { id: idParam } = await params;
+    const id = Number(idParam);
     if (!id) return NextResponse.json({ error: "Invalid id" }, { status: 400 });
     logRouteStart("b2b-orders-get", { id });
     const order = await withRetry(async () => {
@@ -43,9 +44,10 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   }
 }
 
-export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const id = Number(params.id);
+    const { id: idParam } = await params;
+    const id = Number(idParam);
     if (!id) return NextResponse.json({ error: "Invalid id" }, { status: 400 });
     logRouteStart("b2b-orders-update", { id });
     const body = await req.json();
@@ -72,7 +74,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
           : typeof raw.barcode === "string"
             ? [raw.barcode]
             : [];
-        const codes = rawCodes.map((c) => String(c).trim().toUpperCase()).filter(Boolean);
+        const codes = rawCodes.map((c: string | number) => String(c).trim().toUpperCase()).filter(Boolean);
         if (codes.length !== qty) {
           return NextResponse.json({ error: `Barcode count must equal quantity (${qty}) for retail items` }, { status: 400 });
         }
@@ -90,30 +92,39 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
       .filter((i) => i.source === "Retail" && i.barcodes?.length)
       .flatMap((i) => i.barcodes!);
 
-    const [b2bProducts, retailProducts] = await Promise.all([
+    const [b2bProducts, retailProducts, retailInventory] = await Promise.all([
       b2bIds.length
-        ? withRetry(async () =>
-            prisma.productB2B.findMany({
-              where: { id: { in: b2bIds } },
-              select: { id: true, price: true, name: true },
-            }),
-          , 2, "b2b-orders-update-products-b2b")
+        ? withRetry(
+            async () =>
+              prisma.productB2B.findMany({
+                where: { id: { in: b2bIds } },
+                select: { id: true, price: true, name: true },
+              }),
+            2,
+            "b2b-orders-update-products-b2b",
+          )
         : Promise.resolve([]),
       retailIds.length
-        ? withRetry(async () =>
-            prisma.product.findMany({
-              where: { id: { in: retailIds } },
-              select: { id: true, price: true, name: true, code: true },
-            }),
-          , 2, "b2b-orders-update-products-retail")
+        ? withRetry(
+            async () =>
+              prisma.product.findMany({
+                where: { id: { in: retailIds } },
+                select: { id: true, price: true, name: true, code: true },
+              }),
+            2,
+            "b2b-orders-update-products-retail",
+          )
         : Promise.resolve([]),
       retailBarcodes.length
-        ? withRetry(async () =>
-            prisma.inventory.findMany({
-              where: { barcode: { in: retailBarcodes }, status: "READY", location },
-              select: { id: true, barcode: true, productId: true, location: true },
-            }),
-          , 2, "b2b-orders-update-products-retail-inventory")
+        ? withRetry(
+            async () =>
+              prisma.inventory.findMany({
+                where: { barcode: { in: retailBarcodes }, status: "READY", location },
+                select: { id: true, barcode: true, productId: true, location: true },
+              }),
+            2,
+            "b2b-orders-update-products-retail-inventory",
+          )
         : Promise.resolve([]),
     ]);
 
@@ -213,9 +224,10 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
   }
 }
 
-export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const id = Number(params.id);
+    const { id: idParam } = await params;
+    const id = Number(idParam);
     if (!id) return NextResponse.json({ error: "Invalid id" }, { status: 400 });
     logRouteStart("b2b-orders-delete", { id });
     await withRetry(async () => {

@@ -136,10 +136,14 @@ export default function OrdersB2BPage() {
       return;
     }
     const effectiveQty = quantity;
-    const barcodeArr = selectedSource === "Retail" ? undefined : undefined;
+    const barcodeArr: string[] | undefined =
+      selectedSource === "Retail" ? Array.from({ length: effectiveQty }, () => "") : undefined;
     setError("");
     setItems((prev) => {
-      const existingIndex = prev.findIndex((it) => it.product.id === product.id && it.product.source === product.source && (it.barcodes?.join(",") || "") === (barcodeArr?.join(",") || ""));
+      const canMerge = product.source !== "Retail";
+      const existingIndex = canMerge
+        ? prev.findIndex((it) => it.product.id === product.id && it.product.source === product.source)
+        : -1;
       if (existingIndex >= 0) {
         const next = [...prev];
         next[existingIndex] = { ...next[existingIndex], quantity: next[existingIndex].quantity + effectiveQty };
@@ -300,7 +304,13 @@ export default function OrdersB2BPage() {
       return;
     }
     // Ensure retail items have barcode
-    const retailMissing = items.some((it) => it.product.source === "Retail" && !(it.barcode && it.barcode.trim()));
+    const retailMissing = items.some(
+      (it) =>
+        it.product.source === "Retail" &&
+        (!Array.isArray(it.barcodes) ||
+          it.barcodes.length !== it.quantity ||
+          it.barcodes.some((code) => !code || !code.trim())),
+    );
     if (retailMissing) {
       setError("Lengkapi barcode untuk semua produk retail");
       return;
@@ -533,9 +543,11 @@ export default function OrdersB2BPage() {
                     <div className="flex flex-col">
                       <span>{it.product.name} ({it.product.code})</span>
                       <span className="text-xs text-gray-500">{it.product.source === "B2B" ? "Master B2B" : "Master Product"}</span>
-                      {it.product.source === "Retail" && it.barcode && (
-                        <span className="text-xs text-gray-500">Barcode: {it.barcode}</span>
-                      )}
+                      {it.product.source === "Retail" && it.barcodes?.length ? (
+                        <span className="text-xs text-gray-500">
+                          Barcodes: {it.barcodes.filter(Boolean).join(", ")}
+                        </span>
+                      ) : null}
                     </div>
                   </TableCell>
                   <TableCell className="text-center">{it.quantity}</TableCell>

@@ -53,7 +53,11 @@ export async function GET(req: NextRequest) {
     }
     if (search && search.trim()) {
       const term = search.trim();
-      const conditions = [{ customer: { contains: term, mode: "insensitive" } }, { outlet: { contains: term, mode: "insensitive" } }];
+      const conditions: Array<
+        | { customer: { contains: string; mode: "insensitive" } }
+        | { outlet: { contains: string; mode: "insensitive" } }
+        | { id: { equals: number } }
+      > = [{ customer: { contains: term, mode: "insensitive" } }, { outlet: { contains: term, mode: "insensitive" } }];
       const num = Number(term);
       if (!Number.isNaN(num) && num > 0 && num <= 2147483647) conditions.push({ id: { equals: num } });
       where.OR = conditions;
@@ -115,7 +119,7 @@ export async function POST(req: NextRequest) {
           : typeof raw.barcode === "string"
             ? [raw.barcode]
             : [];
-        const codes = rawCodes.map((c) => String(c).trim().toUpperCase()).filter(Boolean);
+        const codes = rawCodes.map((c: string | number) => String(c).trim().toUpperCase()).filter(Boolean);
         if (codes.length !== qty) {
           return NextResponse.json({ error: `Barcode count must equal quantity (${qty}) for retail items` }, { status: 400 });
         }
@@ -133,7 +137,7 @@ export async function POST(req: NextRequest) {
       .filter((i) => i.source === "Retail" && i.barcodes?.length)
       .flatMap((i) => i.barcodes!) ;
 
-    const [b2bProducts, retailProducts] = await Promise.all([
+    const [b2bProducts, retailProducts, retailInventory] = await Promise.all([
       b2bIds.length
         ? withRetry(
             async () =>
