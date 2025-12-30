@@ -183,3 +183,17 @@ export function verifyMidtransSignature(input: {
   const hash = crypto.createHash("sha512").update(payload).digest("hex");
   return hash === input.signatureKey;
 }
+
+export function formatMidtransOrderId(orderId?: string | null) {
+  if (!orderId) return undefined;
+  const trimmed = orderId.trim();
+  if (!trimmed) return undefined;
+  const parts = trimmed.split("-");
+  if (parts.length >= 3) {
+    const last = parts[parts.length - 1];
+    if (/^\d{6,}$/.test(last)) {
+      return parts.slice(0, parts.length - 1).join("-");
+    }
+  }
+  return trimmed;
+}

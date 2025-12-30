@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { prisma } from "../../../lib/prisma";
+import { formatMidtransOrderId } from "../../../lib/midtrans";
 import { MidtransResultCard } from "../_components/midtrans-result-card";
 
 type SearchParams = {
@@ -51,6 +52,7 @@ export default async function MidtransFinishPage({ searchParams }: { searchParam
   const orderId = toStringValue(params?.order_id);
   const grossAmountParam = toStringValue(params?.gross_amount);
   const grossAmount = await resolveGrossAmount(orderId, grossAmountParam);
+  const displayOrderId = formatMidtransOrderId(orderId);
   const transactionStatus = toStringValue(params?.transaction_status)?.toLowerCase();
   const statusCode = toStringValue(params?.status_code);
 
@@ -73,7 +75,9 @@ export default async function MidtransFinishPage({ searchParams }: { searchParam
     redirect(`/midtrans/error${buildQuery(orderId, grossAmount)}`);
   }
 
-  const whatsappMessage = `Halo Kak, saya sudah menyelesaikan pembayaran untuk order ${orderId ? `#${orderId}` : ""}. Mohon dibantu prosesnya ya 🙏`;
+  const whatsappMessage = `Halo Kak, saya sudah menyelesaikan pembayaran untuk order ${
+    displayOrderId ? `#${displayOrderId}` : ""
+  }. Mohon dibantu prosesnya ya 🙏`;
 
   return (
     <MidtransResultCard

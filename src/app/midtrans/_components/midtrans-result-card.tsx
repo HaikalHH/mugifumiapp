@@ -1,6 +1,7 @@
 import { ReactNode } from "react";
 import { CheckCircle2, Clock, AlertTriangle } from "lucide-react";
 import { Button } from "../../../components/ui/button";
+import { formatMidtransOrderId } from "../../../lib/midtrans";
 
 type ResultVariant = "success" | "pending" | "error";
 
@@ -59,6 +60,7 @@ export function MidtransResultCard({
   const config = VARIANT_CONFIG[variant];
   const Icon = config.icon;
   const whatsAppUrl = `https://wa.me/${WHATSAPP_PHONE}?text=${encodeURIComponent(whatsappMessage)}`;
+  const displayOrderId = formatMidtransOrderId(orderId) || orderId;
 
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-10">
@@ -79,7 +81,7 @@ export function MidtransResultCard({
         <div className="grid gap-4 rounded-xl bg-slate-50 p-4 sm:grid-cols-2">
           <div>
             <p className="text-xs uppercase text-slate-500">Order ID</p>
-            <p className="text-lg font-semibold text-slate-900">{orderId || "-"}</p>
+            <p className="text-lg font-semibold text-slate-900">{displayOrderId || "-"}</p>
           </div>
           <div>
             <p className="text-xs uppercase text-slate-500">Total Pembayaran</p>
@@ -103,9 +105,6 @@ export function MidtransResultCard({
           </p>
         </div>
 
-        <p className="text-xs text-slate-400">
-          Halaman ini disediakan untuk memastikan Anda dapat menghubungi admin tanpa pesan otomatis dengan teks yang salah.
-        </p>
       </div>
     </main>
   );

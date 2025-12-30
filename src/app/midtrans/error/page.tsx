@@ -1,3 +1,4 @@
+import { formatMidtransOrderId } from "../../../lib/midtrans";
 import { MidtransResultCard } from "../_components/midtrans-result-card";
 
 type SearchParams = {
@@ -11,7 +12,10 @@ export default async function MidtransErrorPage({ searchParams }: { searchParams
   const params = await searchParams;
   const orderId = toStringValue(params?.order_id);
   const grossAmount = toStringValue(params?.gross_amount);
-  const whatsappMessage = `Halo Kak, pembayaran untuk order ${orderId ? `#${orderId}` : ""} mengalami kendala. Mohon bantuannya ya 🙏`;
+  const displayOrderId = formatMidtransOrderId(orderId);
+  const whatsappMessage = `Halo Kak, pembayaran untuk order ${
+    displayOrderId ? `#${displayOrderId}` : ""
+  } mengalami kendala. Mohon bantuannya ya 🙏`;
 
   return (
     <MidtransResultCard
