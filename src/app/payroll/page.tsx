@@ -11,6 +11,8 @@ type PayrollRow = {
   user: { id: number; name: string; username?: string; role: string; baseSalary: number; hourlyRate: number; penaltyRate: number };
   totals: { latenessMinutes: number; workedMinutes: number; overtimeMinutes: number };
   penalty: number;
+  manualPenalty?: number;
+  manualPenaltyDetails?: Array<{ amount: number; reason: string | null }>;
   overtimePay: number;
   netSalary: number;
   bonus?: number;
@@ -118,7 +120,8 @@ export default function PayrollPage() {
             <TableHead>Role</TableHead>
             <TableHead className="text-right">Base Salary</TableHead>
             <TableHead className="text-right">Lateness (min)</TableHead>
-            <TableHead className="text-right">Penalty</TableHead>
+            <TableHead className="text-right">Penalty Telat</TableHead>
+            <TableHead className="text-right">Penalty Manual</TableHead>
             <TableHead className="text-right">Overtime (min)</TableHead>
             <TableHead className="text-right">Overtime Pay</TableHead>
             <TableHead className="text-right">Net</TableHead>
@@ -132,6 +135,16 @@ export default function PayrollPage() {
               <TableCell className="text-right">Rp {r.user.baseSalary.toLocaleString("id-ID")}</TableCell>
               <TableCell className="text-right">{r.totals.latenessMinutes}</TableCell>
               <TableCell className="text-right">Rp {r.penalty.toLocaleString("id-ID")}</TableCell>
+              <TableCell className="text-right">
+                Rp {Number(r.manualPenalty || 0).toLocaleString("id-ID")}
+                {r.manualPenaltyDetails && r.manualPenaltyDetails.length > 0 && (
+                  <div className="text-xs text-gray-600">
+                    {r.manualPenaltyDetails.map((d, idx) => (
+                      <div key={idx}>Rp {Number(d.amount || 0).toLocaleString("id-ID")}{d.reason ? ` - ${d.reason}` : ""}</div>
+                    ))}
+                  </div>
+                )}
+              </TableCell>
               <TableCell className="text-right">{r.totals.overtimeMinutes}</TableCell>
               <TableCell className="text-right">Rp {r.overtimePay.toLocaleString("id-ID")}</TableCell>
               <TableCell className="text-right font-medium">Rp {r.netSalary.toLocaleString("id-ID")}</TableCell>

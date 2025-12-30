@@ -3,16 +3,76 @@ import { prisma } from "../../../../lib/prisma";
 import { parseBarcode } from "../../../../lib/barcode";
 import { withRetry, createErrorResponse, logRouteStart, logRouteComplete } from "../../../../lib/db-utils";
 
+function generateManualBarcode(productCode: string) {
+  const timestamp = Date.now();
+  const random = Math.random().toString(36).slice(2, 8).toUpperCase();
+  return `AUTO-${productCode.toUpperCase()}-${timestamp}-${random}`;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { barcode, location } = body as { barcode: string; location: string };
+    const { barcode, location, productCode, quantity } = body as { barcode?: string; location?: string; productCode?: string; quantity?: number };
     
-    if (!barcode || !location) {
-      return NextResponse.json({ error: "barcode and location are required" }, { status: 400 });
+    if (!location) {
+      return NextResponse.json({ error: "location is required" }, { status: 400 });
     }
 
-    logRouteStart('inventory-in', { barcode, location });
+    const isManual = !barcode && productCode;
+    if (!barcode && !productCode) {
+      return NextResponse.json({ error: "barcode or productCode is required" }, { status: 400 });
+    }
+
+    logRouteStart('inventory-in', { barcode, location, productCode, quantity });
+
+    if (isManual) {
+      const trimmedCode = productCode!.trim().toUpperCase();
+      if (!trimmedCode) {
+        return NextResponse.json({ error: "productCode is required" }, { status: 400 });
+      }
+      const qty = typeof quantity === "number" && Number.isFinite(quantity) ? Math.max(1, Math.floor(quantity)) : 1;
+
+      const product = await withRetry(async () => {
+        return prisma.product.findUnique({
+          where: { code: trimmedCode },
+          select: { id: true, code: true, name: true },
+        });
+      }, 2, "inventory-in-manual-product");
+
+      if (!product) {
+        return NextResponse.json({ error: "Product not found" }, { status: 404 });
+      }
+
+      const createdItems = [];
+      for (let i = 0; i < qty; i += 1) {
+        const generatedBarcode = generateManualBarcode(trimmedCode);
+        const created = await withRetry(async () => {
+          return prisma.inventory.create({
+            data: {
+              barcode: generatedBarcode,
+              location,
+              productId: product.id,
+            },
+            select: {
+              id: true,
+              barcode: true,
+              location: true,
+              status: true,
+              productId: true,
+              createdAt: true,
+            },
+          });
+        }, 2, "inventory-in-manual-create");
+        createdItems.push(created);
+      }
+
+      logRouteComplete("inventory-in", createdItems.length);
+      return NextResponse.json({ items: createdItems, count: createdItems.length }, { status: 201 });
+    }
+
+    if (!barcode) {
+      return NextResponse.json({ error: "barcode is required" }, { status: 400 });
+    }
 
     const parsed = parseBarcode(barcode);
     if (!parsed) {
@@ -106,5 +166,4 @@ export async function POST(req: NextRequest) {
     );
   }
 }
-
 

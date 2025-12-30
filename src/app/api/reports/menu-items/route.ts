@@ -122,14 +122,16 @@ export async function GET(req: NextRequest) {
       }
       
       const menuItem = menuItemsMap.get(productKey);
+      const masterPrice = typeof product.price === 'number' ? product.price : 0;
       menuItem.totalQuantity += item.quantity; // Use quantity from order item
-      menuItem.totalRevenue += (item.price * item.quantity); // price * quantity
-      menuItem.totalHppValue += Math.round((item.price * item.quantity) * product.hppPct);
+      // Use master product price for revenue/HPP so it follows master data, not per-order price
+      menuItem.totalRevenue += (masterPrice * item.quantity);
+      menuItem.totalHppValue += Math.round((masterPrice * item.quantity) * product.hppPct);
       menuItem.outlets.add(order.outlet);
       menuItem.locations.add(order.location);
       menuItem.sales.push({
         quantity: item.quantity,
-        price: item.price,
+        price: masterPrice,
         outlet: order.outlet,
         location: order.location,
         orderDate: order.orderDate,

@@ -9,17 +9,23 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { Badge } from "../../components/ui/badge";
 import { DateTimePicker } from "../../components/ui/date-picker";
 import { toUTCForJakarta, getStartOfDayJakarta, getEndOfDayJakarta } from "../../lib/timezone";
+import { usePathname } from "next/navigation";
 
 type Order = { 
   id: number; 
   outlet: string; 
   location: string; 
   orderDate: string; 
+  deliveryDate?: string | null;
   customer?: string | null; 
   status: string;
   totalAmount?: number | null;
   discount?: number | null;
   actPayout?: number | null;
+  ongkirPlan?: number | null;
+  paymentLink?: string | null;
+  midtransOrderId?: string | null;
+  midtransTransactionId?: string | null;
   items: Array<{
     id: number;
     productId: number;
@@ -79,27 +85,34 @@ function getInitialLocation(): string {
 
 export default function OrdersPage() {
   const { user } = useAuth();
+  const pathname = usePathname();
+  const isWhatsAppPage = pathname === "/orders-whatsapp";
   const [orders, setOrders] = useState<Order[]>([]);
-  const [outlet, setOutlet] = useState("WhatsApp");
+  const [outlet, setOutlet] = useState(isWhatsAppPage ? "WhatsApp" : "Tokopedia");
   const [location, setLocation] = useState<string>(() => getInitialLocation());
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
+  const [boxPrompt, setBoxPrompt] = useState<null | { boxProduct: Product; boxCode: string; boxPrice: number; targetCode: string }>(null);
 
   // Modal form state
   const [form, setForm] = useState<{
     customer: string;
     status: OrderStatus;
-    orderDate: Date;
+    orderDate: Date | null;
+    deliveryDate: Date | null;
     discount: string;
     estPayout: string;
     actPayout: string;
+    ongkirPlan: string;
   }>({
     customer: "",
     status: DEFAULT_ORDER_STATUS,
-    orderDate: new Date(),
+    orderDate: null,
+    deliveryDate: null,
     discount: "",
     estPayout: "",
     actPayout: "",
+    ongkirPlan: "",
   });
   const [editingOrderId, setEditingOrderId] = useState<number | null>(null);
   const [editingOutlet, setEditingOutlet] = useState<string>("");
@@ -114,6 +127,7 @@ export default function OrdersPage() {
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [quantity, setQuantity] = useState(1);
   const [inventoryOverview, setInventoryOverview] = useState<null | { byLocation: Record<string, Record<string, { total: number; reserved: number; available: number }>> }>(null);
+  const [lastPaymentLink, setLastPaymentLink] = useState<{ url: string; orderId?: number } | null>(null);
 
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
@@ -123,6 +137,11 @@ export default function OrdersPage() {
 
   const loadOrders = useCallback(async () => {
     const params = new URLSearchParams({ page: String(page), pageSize: "10" });
+    if (isWhatsAppPage) {
+      params.set("outlet", "WhatsApp");
+    } else {
+      params.set("excludeOutlet", "WhatsApp");
+    }
     if (from) {
       const fromJakarta = getStartOfDayJakarta(from);
       params.set("from", fromJakarta.toISOString());
@@ -138,7 +157,7 @@ export default function OrdersPage() {
     const data = await res.json();
     setOrders(data.rows || []);
     setTotal(data.total || 0);
-  }, [page, from, to, search]);
+  }, [page, from, to, search, isWhatsAppPage]);
 
   const loadProducts = async () => {
     try {
@@ -170,10 +189,12 @@ export default function OrdersPage() {
     setForm({
       customer: "",
       status: DEFAULT_ORDER_STATUS,
-      orderDate: new Date(),
+      orderDate: null,
+      deliveryDate: null,
       discount: "",
       estPayout: "",
       actPayout: "",
+      ongkirPlan: "",
     });
     setSelectedItems([]);
     setIsModalOpen(true);
@@ -231,12 +252,78 @@ export default function OrdersPage() {
     }
 
     setError("");
-    setSelectedItems(prev => [...prev, { 
+    const nextItems = [...selectedItems, { 
       productId: selectedProduct.id, 
       quantity, 
       product: selectedProduct 
-    }]);
+    }];
+
+    // Auto BOX selection for WA/Tokopedia/Shopee with hardcoded codes
+    const outletForBox = editingOrderId ? editingOutlet : outlet;
+    const code = (selectedProduct.code || "").toUpperCase();
+    const needsBox = outletForBox === "WhatsApp" || outletForBox === "Tokopedia" || outletForBox === "Shopee";
+    const promptBoxCodes = new Set([
+      "HOK-L","HOK-R","WHO-L","WHO-R","MAT-L","MAT-R","SAK-L","SAK-R","YAM-L","YAM-R",
+      "COK-L","COK-R"
+    ]);
+    const autoBoxCodes = new Set([
+      "COK-L","COK-R","ABO","MAC"
+    ]);
+
+    const isPrompt = promptBoxCodes.has(code);
+    const isAuto = autoBoxCodes.has(code);
+
+    if (needsBox && (isPrompt || isAuto)) {
+      let boxType: "L" | "R" = "L";
+      if (code.endsWith("-R")) boxType = "R";
+      if (code === "COK-R") boxType = "R";
+      // ABO and MAC default to L
+      const boxCode = boxType === "L" ? "BOX-L" : "BOX-R";
+      const boxPrice = boxType === "L" ? 4000 : 3000;
+      const boxProduct = products.find(p => p.code.toUpperCase() === boxCode);
+
+      const addBox = isAuto;
+      if (isPrompt && !isAuto) {
+        if (!boxProduct) {
+          setError(`Produk BOX (${boxCode}) tidak ditemukan. Tambahkan di Products dengan harga ${boxPrice}.`);
+          setIsProductModalOpen(false);
+          setSelectedProduct(null);
+          setQuantity(1);
+          return;
+        }
+        // Open nicer prompt instead of alert/confirm
+        setBoxPrompt({ boxProduct, boxCode, boxPrice, targetCode: selectedProduct.code });
+      }
+
+      if (addBox) {
+        if (!boxProduct) {
+          setError(`Produk BOX (${boxCode}) tidak ditemukan. Tambahkan di Products dengan harga ${boxPrice}.`);
+          setIsProductModalOpen(false);
+          setSelectedProduct(null);
+          setQuantity(1);
+          return;
+        }
+        nextItems.push({
+          productId: boxProduct.id,
+          quantity: 1,
+          product: boxProduct
+        });
+      }
+    }
+
+    setSelectedItems(nextItems);
     setIsProductModalOpen(false);
+  };
+
+  const addBoxFromPrompt = () => {
+    if (!boxPrompt) return;
+    const { boxProduct } = boxPrompt;
+    setSelectedItems(prev => [...prev, {
+      productId: boxProduct.id,
+      quantity: 1,
+      product: boxProduct
+    }]);
+    setBoxPrompt(null);
   };
 
   const removeItem = (index: number) => {
@@ -248,7 +335,9 @@ export default function OrdersPage() {
     const order = orders.find(o => o.id === orderId);
     if (order) {
       const statusLabel = normalizeOrderStatus(order.status);
-      alert(`View Order #${orderId}\nOutlet: ${order.outlet}\nCustomer: ${order.customer || '-'}\nStatus: ${statusLabel}\nTotal: Rp ${order.totalAmount?.toLocaleString('id-ID') || '0'}`);
+      alert(`View Order #${orderId}\nOutlet: ${order.outlet}\nCustomer: ${order.customer || '-'}\nStatus: ${statusLabel}\nDelivery Date: ${
+        order.deliveryDate ? new Date(order.deliveryDate).toLocaleDateString() : "-"
+      }\nTotal: Rp ${order.totalAmount?.toLocaleString('id-ID') || '0'}`);
     }
   };
 
@@ -259,14 +348,16 @@ export default function OrdersPage() {
       setEditingOrderId(orderId); // Set editing state
       setEditingOutlet(order.outlet); // Set editing outlet
       setEditingLocation(order.location); // Set editing location
-      setForm({
-        customer: order.customer || "",
-        status: normalizeOrderStatus(order.status),
-        orderDate: new Date(order.orderDate),
-        discount: order.discount?.toString() || "",
-        estPayout: "",
-        actPayout: order.actPayout?.toString() || "",
-      });
+    setForm({
+      customer: order.customer || "",
+      status: normalizeOrderStatus(order.status),
+      orderDate: new Date(order.orderDate),
+      deliveryDate: order.deliveryDate ? new Date(order.deliveryDate) : null,
+      discount: order.discount?.toString() || "",
+      estPayout: "",
+      actPayout: order.actPayout?.toString() || "",
+      ongkirPlan: order.ongkirPlan ? order.ongkirPlan.toString() : "",
+    });
       
       // Ensure we have complete product data for each item
       const itemsWithProducts = await Promise.all(
@@ -334,6 +425,36 @@ export default function OrdersPage() {
     }
   };
 
+  const copyPaymentLink = async (url: string) => {
+    if (!url) return;
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      window.prompt("Copy payment link", url);
+    }
+  };
+
+  const handleModalOutletChange = (value: string) => {
+    if (isWhatsAppPage) {
+      setOutlet("WhatsApp");
+      setEditingOutlet("WhatsApp");
+      setForm((prev) => ({
+        ...prev,
+        status: "NOT PAID",
+      }));
+      return;
+    }
+    if (editingOrderId) {
+      setEditingOutlet(value);
+      return;
+    }
+    setOutlet(value);
+    setForm((prev) => ({
+      ...prev,
+      status: value === "WhatsApp" ? "NOT PAID" : DEFAULT_ORDER_STATUS,
+    }));
+  };
+
   const submitOrder = async () => {
     setError("");
     
@@ -341,13 +462,33 @@ export default function OrdersPage() {
       setError("Customer wajib diisi");
       return;
     }
+    if (!form.orderDate) {
+      setError("Order Date wajib diisi");
+      return;
+    }
+    if (!form.deliveryDate) {
+      setError("Delivery Date wajib diisi");
+      return;
+    }
+    if (form.orderDate && form.deliveryDate && form.deliveryDate.getTime() < form.orderDate.getTime()) {
+      setError("Delivery Date tidak boleh sebelum Order Date");
+      return;
+    }
+    if (isWhatsAppModal) {
+      const ongkirNum = Number(form.ongkirPlan);
+      if (!ongkirNum || Number.isNaN(ongkirNum) || ongkirNum <= 0) {
+        setError("Ongkir Plan wajib diisi untuk WhatsApp");
+        return;
+      }
+    }
     if (selectedItems.length === 0) {
       setError("Tambah minimal 1 item terlebih dahulu");
       return;
     }
 
     // Convert order date to UTC for Jakarta timezone
-    const orderDateUTC = toUTCForJakarta(form.orderDate);
+    const orderDateUTC = toUTCForJakarta(form.orderDate as Date);
+    const deliveryDateUTC = toUTCForJakarta(form.deliveryDate as Date);
 
     const currentOutlet = editingOrderId ? editingOutlet : outlet;
     const currentLocation = editingOrderId ? editingLocation : location;
@@ -358,8 +499,10 @@ export default function OrdersPage() {
       customer: string;
       status: OrderStatus;
       orderDate: string; // ISO in UTC
+      deliveryDate: string;
       discount: number | null;
       actPayout: number | null;
+      ongkirPlan: number | null;
       items: Array<{ productId: number; quantity: number }>;
     };
 
@@ -369,8 +512,10 @@ export default function OrdersPage() {
       customer: form.customer,
       status: form.status,
       orderDate: orderDateUTC.toISOString(),
+      deliveryDate: deliveryDateUTC.toISOString(),
       discount: form.discount ? Number(form.discount) : null,
       actPayout: outletHasActPayout(currentOutlet) && form.actPayout ? Number(form.actPayout) : null,
+      ongkirPlan: isWhatsAppModal ? Number(form.ongkirPlan) : null,
       items: selectedItems.map(item => ({
         productId: item.productId,
         quantity: item.quantity
@@ -387,7 +532,15 @@ export default function OrdersPage() {
       body: JSON.stringify(payload) 
     });
     
+    const data = await res.json().catch(() => null);
+
     if (res.ok) {
+      if (!editingOrderId && currentOutlet.toLowerCase() === "whatsapp" && data?.paymentLink) {
+        setLastPaymentLink({
+          url: data.paymentLink,
+          orderId: data.id,
+        });
+      }
       // Send WhatsApp notification only on create (not on edit)
       if (!editingOrderId) {
         try {
@@ -433,8 +586,7 @@ export default function OrdersPage() {
       setIsModalOpen(false);
       loadOrders();
     } else {
-      const err = await res.json().catch(() => ({}));
-      setError(err.error || "Failed to create order");
+      setError((data && data.error) || "Failed to create order");
     }
     setIsSubmitting(false);
   };
@@ -445,14 +597,23 @@ export default function OrdersPage() {
       return acc + (price * item.quantity);
     }, 0);
     const discount = form.discount ? Number(form.discount) : 0;
-    return discount > 0 ? Math.round(subtotal * (1 - discount / 100)) : subtotal;
+    const afterDiscount = discount > 0 ? Math.round(subtotal * (1 - discount / 100)) : subtotal;
+    const ongkirValue = isWhatsAppModal ? Number(form.ongkirPlan || 0) : 0;
+    return afterDiscount + (Number.isFinite(ongkirValue) ? ongkirValue : 0);
   };
 
   const editingOrder = editingOrderId ? orders.find(o => o.id === editingOrderId) : null;
   const isEditingDelivered = Boolean(editingOrder?.deliveries && editingOrder.deliveries.length > 0);
 
-  // Do not lock Orders page for composite roles; only block if user has neither Sales nor Admin/Manager
-  if (user && !hasRole(user, "Sales") && !hasRole(user, "Admin") && !hasRole(user, "Manager")) {
+  const currentModalOutlet = editingOrderId ? editingOutlet : outlet;
+  const isWhatsAppModal = currentModalOutlet === "WhatsApp";
+
+  // Do not lock Orders page for composite roles; only block if user lacks allowed roles
+  const allowed = isWhatsAppPage
+    ? (user && (hasRole(user, "Manager") || hasRole(user, "BDGSales") || hasRole(user, "Admin")))
+    : (user && (hasRole(user, "Sales") || hasRole(user, "Admin") || hasRole(user, "Manager")));
+
+  if (!allowed) {
     return (
       <main className="p-6">
         <div className="text-sm text-gray-600">Akses ditolak.</div>
@@ -462,25 +623,24 @@ export default function OrdersPage() {
 
   return (
     <main className="p-6 space-y-6">
-      <h1 className="text-xl font-semibold">Orders</h1>
+      <h1 className="text-xl font-semibold">{isWhatsAppPage ? "Orders - WhatsApp" : "Orders"}</h1>
       <div className="grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
-        <div className="flex flex-col gap-1">
-          <Label>Outlet</Label>
-          <Select value={outlet} onValueChange={setOutlet}>
-            <SelectTrigger>
-              <SelectValue placeholder="Pilih Outlet" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="Tokopedia">Tokopedia</SelectItem>
-              <SelectItem value="Shopee">Shopee</SelectItem>
-              <SelectItem value="WhatsApp">WhatsApp</SelectItem>
-              <SelectItem value="Cafe">Cafe</SelectItem>
-              <SelectItem value="Wholesale">Wholesale</SelectItem>
-              <SelectItem value="Complain">Complain</SelectItem>
-              <SelectItem value="Free">Free</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+        {!isWhatsAppPage && (
+          <div className="flex flex-col gap-1">
+            <Label>Outlet</Label>
+            <Select value={outlet} onValueChange={handleModalOutletChange}>
+              <SelectTrigger>
+                <SelectValue placeholder="Pilih Outlet" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Tokopedia">Tokopedia</SelectItem>
+                <SelectItem value="Shopee">Shopee</SelectItem>
+                <SelectItem value="Free">Free</SelectItem>
+                <SelectItem value="Complain">Complain</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        )}
         <div className="flex flex-col gap-1">
           <Label>Location</Label>
           <Select
@@ -534,6 +694,20 @@ export default function OrdersPage() {
         </Button>
       </div>
 
+      {lastPaymentLink && (
+        <div className="border rounded p-3 bg-amber-50 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+          <div className="space-y-1">
+            <div className="font-medium">Payment link dibuat untuk Order #{lastPaymentLink.orderId ?? "-"}</div>
+            <div className="text-sm text-gray-700 break-all">{lastPaymentLink.url}</div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={() => copyPaymentLink(lastPaymentLink.url)}>Copy Link</Button>
+            <Button onClick={() => window.open(lastPaymentLink.url, "_blank")}>Open</Button>
+            <Button variant="outline" onClick={() => setLastPaymentLink(null)}>Dismiss</Button>
+          </div>
+        </div>
+      )}
+
       {/* Create Order Modal */}
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -544,13 +718,12 @@ export default function OrdersPage() {
           </DialogHeader>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {/* Outlet selector (enabled in edit mode) */}
-            <div className="flex flex-col gap-1">
-              <Label>Outlet</Label>
-              <Select 
-                value={(editingOrderId ? editingOutlet : outlet)} 
-                onValueChange={(v) => {
-                  if (editingOrderId) setEditingOutlet(v); else setOutlet(v);
-                }}
+            {!isWhatsAppPage && (
+              <div className="flex flex-col gap-1">
+                <Label>Outlet</Label>
+                <Select 
+                  value={currentModalOutlet} 
+                  onValueChange={handleModalOutletChange}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Pilih Outlet" />
@@ -558,59 +731,79 @@ export default function OrdersPage() {
                 <SelectContent>
                   <SelectItem value="Tokopedia">Tokopedia</SelectItem>
                   <SelectItem value="Shopee">Shopee</SelectItem>
-                  <SelectItem value="WhatsApp">WhatsApp</SelectItem>
-                  <SelectItem value="Cafe">Cafe</SelectItem>
-                  <SelectItem value="Wholesale">Wholesale</SelectItem>
-                  <SelectItem value="Complain">Complain</SelectItem>
                   <SelectItem value="Free">Free</SelectItem>
+                  <SelectItem value="Complain">Complain</SelectItem>
                 </SelectContent>
               </Select>
             </div>
+            )}
             <div className="flex flex-col gap-1">
               <Label>
-                {(editingOrderId ? editingOutlet : outlet) === "Tokopedia" || (editingOrderId ? editingOutlet : outlet) === "Shopee" ? "ID Pesanan *" : 
-                 (editingOrderId ? editingOutlet : outlet) === "WhatsApp" ? "No. HP *" : "Customer *"}
+                {currentModalOutlet === "Tokopedia" || currentModalOutlet === "Shopee" ? "ID Pesanan *" : 
+                 currentModalOutlet === "WhatsApp" ? "No. HP *" : "Customer *"}
               </Label>
               <Input 
                 placeholder={
-                  (editingOrderId ? editingOutlet : outlet) === "Tokopedia" || (editingOrderId ? editingOutlet : outlet) === "Shopee" ? "Masukkan ID Pesanan" :
-                  (editingOrderId ? editingOutlet : outlet) === "WhatsApp" ? "Masukkan No. HP" : "Customer"
+                  currentModalOutlet === "Tokopedia" || currentModalOutlet === "Shopee" ? "Masukkan ID Pesanan" :
+                  currentModalOutlet === "WhatsApp" ? "Masukkan No. HP" : "Customer"
                 } 
                 value={form.customer} 
                 onChange={(e) => setForm({ ...form, customer: e.target.value })} 
               />
             </div>
-            <div className="flex flex-col gap-1">
-              <Label>Status</Label>
-              <Select
-                value={form.status}
-                onValueChange={(value) => setForm({ ...form, status: normalizeOrderStatus(value) })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {ORDER_STATUS_OPTIONS.map((statusOption) => (
-                    <SelectItem key={statusOption} value={statusOption}>
-                      {statusOption}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            {!isWhatsAppModal && (
+              <div className="flex flex-col gap-1">
+                <Label>Status</Label>
+                <Select
+                  value={form.status}
+                  onValueChange={(value) => setForm({ ...form, status: normalizeOrderStatus(value) })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ORDER_STATUS_OPTIONS.map((statusOption) => (
+                      <SelectItem key={statusOption} value={statusOption}>
+                        {statusOption}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="flex flex-col gap-1">
               <Label>Order Date</Label>
               <DateTimePicker
-                value={form.orderDate}
-                onChange={(date) => setForm({ ...form, orderDate: date || new Date() })}
+                value={form.orderDate || undefined}
+                onChange={(date) => setForm({ ...form, orderDate: date || null })}
                 placeholder="Select order date"
               />
             </div>
             <div className="flex flex-col gap-1">
+              <Label>Delivery Date</Label>
+              <DateTimePicker
+                value={form.deliveryDate || undefined}
+                onChange={(date) => setForm({ ...form, deliveryDate: date || null })}
+                placeholder="Select delivery date"
+              />
+            </div>
+            {isWhatsAppModal && (
+              <div className="flex flex-col gap-1">
+                <Label>Ongkir Plan (Rp)</Label>
+                <Input
+                  type="number"
+                  placeholder="e.g. 10000"
+                  value={form.ongkirPlan}
+                  onChange={(e) => setForm({ ...form, ongkirPlan: e.target.value })}
+                  required
+                />
+              </div>
+            )}
+            <div className="flex flex-col gap-1">
               <Label>Discount %</Label>
               <Input type="number" placeholder="e.g. 10" value={form.discount} onChange={(e) => setForm({ ...form, discount: e.target.value })} />
             </div>
-            {outletHasActPayout(editingOrderId ? editingOutlet : outlet) && (
+            {outletHasActPayout(currentModalOutlet) && (
               <>
                 <div className="flex flex-col gap-1">
                   <Label>Estimasi Total (Rp)</Label>
@@ -759,6 +952,25 @@ export default function OrdersPage() {
         </DialogContent>
       </Dialog>
 
+      {/* Box prompt dialog */}
+      <Dialog open={Boolean(boxPrompt)} onOpenChange={(open) => { if (!open) setBoxPrompt(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Tambah BOX?</DialogTitle>
+          </DialogHeader>
+          {boxPrompt && (
+            <div className="space-y-3">
+              <div>Item: {boxPrompt.targetCode}</div>
+              <div className="text-sm text-gray-700">Tambah {boxPrompt.boxCode} dengan harga Rp {boxPrompt.boxPrice.toLocaleString("id-ID")}?</div>
+            </div>
+          )}
+          <DialogFooter className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setBoxPrompt(null)}>No Box</Button>
+            <Button onClick={addBoxFromPrompt}>Tambah BOX</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <div>
         <h2 className="font-medium mb-2">Recent Orders</h2>
         <div className="overflow-x-auto">
@@ -770,6 +982,7 @@ export default function OrdersPage() {
               <TableHead className="text-left hidden md:table-cell">Location</TableHead>
               <TableHead className="text-left hidden md:table-cell">Customer</TableHead>
               <TableHead className="text-left">Order Date</TableHead>
+              <TableHead className="text-left">Delivery Date</TableHead>
               <TableHead className="text-left">Status</TableHead>
               <TableHead className="text-left hidden md:table-cell">Delivery</TableHead>
               <TableHead className="text-right">Total</TableHead>
@@ -797,6 +1010,7 @@ export default function OrdersPage() {
                 <TableCell className="hidden md:table-cell">{order.location}</TableCell>
                 <TableCell className="hidden md:table-cell">{order.customer || "-"}</TableCell>
                 <TableCell>{new Date(order.orderDate).toLocaleDateString()}</TableCell>
+                <TableCell>{order.deliveryDate ? new Date(order.deliveryDate).toLocaleDateString() : "-"}</TableCell>
                 <TableCell>
                   <Badge color={getStatusBadgeColor(statusLabel)}>
                     {statusLabel}
@@ -832,6 +1046,15 @@ export default function OrdersPage() {
                     >
                       Edit
                     </Button>
+                    {order.outlet.toLowerCase() === "whatsapp" && normalizeOrderStatus(order.status) === "NOT PAID" && order.paymentLink && (
+                      <Button
+                        variant="link"
+                        className="p-0 h-auto text-amber-700"
+                        onClick={() => copyPaymentLink(order.paymentLink!)}
+                      >
+                        Copy Link
+                      </Button>
+                    )}
                     {user?.role === "Admin" && (
                       <Button 
                         variant="link" 

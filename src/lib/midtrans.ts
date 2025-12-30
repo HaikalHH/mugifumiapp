@@ -1,0 +1,157 @@
+import crypto from "crypto";
+
+type SnapItem = {
+  id: string;
+  price: number;
+  quantity: number;
+  name: string;
+};
+
+type SnapCreateParams = {
+  orderId: string;
+  grossAmount: number;
+  customer?: string | null;
+  items: SnapItem[];
+  expiryMinutes?: number;
+};
+
+const DEFAULT_ENABLED_PAYMENTS = [
+  "bca_va",
+  "bni_va",
+  "bri_va",
+  "permata_va",
+  "echannel", // Mandiri VA
+  "cimb_va",
+  "gopay",
+] as const;
+
+function getMidtransConfig() {
+  const serverKey = process.env.MIDTRANS_SERVER_KEY;
+  if (!serverKey) {
+    throw new Error("MIDTRANS_SERVER_KEY is not set");
+  }
+
+  // Default to production as requested; allow override via env for testing
+  const baseUrl = (process.env.MIDTRANS_BASE_URL || "https://app.midtrans.com").replace(/\/+$/, "");
+  const finishUrl = process.env.MIDTRANS_FINISH_URL;
+  const pendingUrl = process.env.MIDTRANS_PENDING_URL;
+  const errorUrl = process.env.MIDTRANS_ERROR_URL;
+  return { serverKey, baseUrl, finishUrl, pendingUrl, errorUrl };
+}
+
+function getEnabledPayments(): string[] {
+  const raw = process.env.MIDTRANS_ENABLED_PAYMENTS;
+  const fallback = [...DEFAULT_ENABLED_PAYMENTS];
+  if (!raw || !raw.trim()) return fallback;
+
+  const clean = (value: unknown): string | null => {
+    if (typeof value !== "string") return null;
+    const trimmed = value.trim();
+    return trimmed ? trimmed : null;
+  };
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      const fromJson = parsed.map((entry) => clean(entry)).filter((v): v is string => Boolean(v));
+      if (fromJson.length > 0) {
+        return fromJson;
+      }
+    }
+  } catch {
+    // fall through to comma parsing
+  }
+
+  const fromComma = raw
+    .split(",")
+    .map((entry) => clean(entry))
+    .filter((v): v is string => Boolean(v));
+  const candidates = fromComma.length > 0 ? fromComma : fallback;
+  const seen = new Set<string>();
+  return candidates.filter((value) => {
+    if (seen.has(value)) return false;
+    seen.add(value);
+    return true;
+  });
+}
+
+export async function createSnapTransaction(params: SnapCreateParams) {
+  const { serverKey, baseUrl, finishUrl, pendingUrl, errorUrl } = getMidtransConfig();
+  const expiryMinutes = params.expiryMinutes ?? 60;
+  const enabledPayments = getEnabledPayments();
+  const includesPayment = (code: string) => {
+    return enabledPayments.includes(code);
+  };
+  const snapCallbackUrl = process.env.MIDTRANS_GOPAY_CALLBACK_URL || finishUrl || pendingUrl || errorUrl || undefined;
+
+  const body = {
+    transaction_details: {
+      order_id: params.orderId,
+      gross_amount: params.grossAmount,
+    },
+    callbacks: finishUrl || pendingUrl || errorUrl ? {
+      ...(finishUrl ? { finish: finishUrl } : {}),
+      ...(pendingUrl ? { pending: pendingUrl } : {}),
+      ...(errorUrl ? { error: errorUrl } : {}),
+    } : undefined,
+    customer_details: {
+      first_name: params.customer || "Customer",
+    },
+    item_details: params.items.map((item) => ({
+      id: item.id,
+      price: item.price,
+      quantity: item.quantity,
+      name: item.name.substring(0, 50), // Snap requires <=50 chars
+    })),
+    enabled_payments: enabledPayments,
+    payment_option_priorities: enabledPayments,
+    ...(includesPayment("gopay")
+      ? {
+          gopay: {
+            enable_callback: Boolean(snapCallbackUrl),
+            callback_url: snapCallbackUrl,
+          },
+        }
+      : {}),
+    expiry: {
+      unit: "minutes",
+      duration: expiryMinutes,
+    },
+  };
+
+  const authHeader = Buffer.from(`${serverKey}:`).toString("base64");
+  const res = await fetch(`${baseUrl}/snap/v1/transactions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      Authorization: `Basic ${authHeader}`,
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Midtrans Snap error: ${res.status} ${res.statusText} - ${text}`);
+  }
+
+  const data = await res.json();
+  return {
+    token: data?.token as string,
+    redirectUrl: data?.redirect_url as string,
+    expiryAt: new Date(Date.now() + expiryMinutes * 60 * 1000),
+    orderId: params.orderId,
+  };
+}
+
+export function verifyMidtransSignature(input: {
+  orderId: string;
+  statusCode: string;
+  grossAmount: string;
+  signatureKey: string;
+}) {
+  const { serverKey } = getMidtransConfig();
+  const payload = `${input.orderId}${input.statusCode}${input.grossAmount}${serverKey}`;
+  const hash = crypto.createHash("sha512").update(payload).digest("hex");
+  return hash === input.signatureKey;
+}

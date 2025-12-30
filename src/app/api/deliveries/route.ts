@@ -48,7 +48,9 @@ export async function GET(req: NextRequest) {
               outlet: true,
               customer: true,
               orderDate: true,
+              deliveryDate: true,
               location: true,
+              ongkirPlan: true,
               items: {
                 select: {
                   id: true,
@@ -103,114 +105,217 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    logRouteStart('deliveries-create');
+    logRouteStart("deliveries-create");
 
     const body = await req.json();
     const {
       orderId,
       deliveryDate,
-      ongkirPlan,
       ongkirActual,
-      items, // Array of { productId, barcode }
+      items,
     } = body as {
       orderId: number;
       deliveryDate?: string;
-      ongkirPlan?: number;
       ongkirActual?: number;
-      items?: Array<{ productId: number; barcode: string }>;
+      items?: Array<{ productId: number; quantity: number }>;
     };
 
     if (!orderId) {
       return NextResponse.json({ error: "orderId is required" }, { status: 400 });
     }
 
-    if (!items || items.length === 0) {
-      return NextResponse.json({ error: "at least one item is required" }, { status: 400 });
+    if (!Array.isArray(items) || items.length === 0) {
+      return NextResponse.json({ error: "items is required" }, { status: 400 });
+    }
+
+    const normalized = items
+      .map((item) => ({
+        productId: Number(item.productId),
+        quantity: Math.max(0, Math.floor(Number(item.quantity))),
+      }))
+      .filter((item) => item.productId && item.quantity > 0);
+
+    if (normalized.length === 0) {
+      return NextResponse.json({ error: "at least one product quantity must be greater than zero" }, { status: 400 });
     }
 
     const created = await withRetry(async () => {
       return prisma.$transaction(async (tx) => {
-        // Get order and its items
         const order = await tx.order.findUnique({
           where: { id: orderId },
           select: {
             id: true,
             status: true,
+            ongkirPlan: true,
+            outlet: true,
+            customer: true,
+            location: true,
+            totalAmount: true,
             items: {
               select: {
+                id: true,
                 productId: true,
                 quantity: true,
+                price: true,
                 product: {
                   select: {
                     id: true,
                     code: true,
                     name: true,
-                    price: true
-                  }
-                }
-              }
-            }
-          }
+                    price: true,
+                  },
+                },
+              },
+            },
+          },
         });
 
         if (!order) {
           throw new Error("Order not found");
         }
 
-        // Validate that all scanned items match order items
-        const orderItemMap = new Map();
+        const orderItemMap = new Map<
+          number,
+          {
+            id: number;
+            qty: number;
+            price: number;
+            product: { code?: string | null; price: number; name?: string | null };
+          }
+        >();
         for (const orderItem of order.items) {
-          orderItemMap.set(orderItem.productId, orderItem.quantity);
+          orderItemMap.set(orderItem.productId, {
+            id: orderItem.id,
+            qty: orderItem.quantity,
+            price: orderItem.price,
+            product: {
+              code: orderItem.product?.code,
+              price: orderItem.product?.price || 0,
+              name: orderItem.product?.name,
+            },
+          });
         }
 
-        const scannedItemCounts = new Map();
-        for (const item of items) {
+        const requestedMap = new Map<number, number>();
+        for (const item of normalized) {
           if (!orderItemMap.has(item.productId)) {
             throw new Error(`Product ${item.productId} is not in the order`);
           }
-          scannedItemCounts.set(item.productId, (scannedItemCounts.get(item.productId) || 0) + 1);
+          requestedMap.set(item.productId, (requestedMap.get(item.productId) || 0) + item.quantity);
         }
 
-        // Validate quantities match
-        for (const [productId, scannedCount] of scannedItemCounts) {
-          const orderQuantity = orderItemMap.get(productId);
-          if (scannedCount > orderQuantity) {
-            throw new Error(`Too many items scanned for product ${productId}. Expected: ${orderQuantity}, Scanned: ${scannedCount}`);
+        if (requestedMap.size === 0) {
+          throw new Error("No valid items to deliver");
+        }
+
+        const inventoryUsages: Array<{ productId: number; barcode: string; price: number }> = [];
+        const boxItems: Array<{ productId: number; code: string; price: number; quantity: number }> = [];
+        const orderItemUpdates: Promise<unknown>[] = [];
+        const processedProducts = new Set<number>();
+        const refunds: Array<{ productId: number; name: string; code: string; quantity: number }> = [];
+        let refundAmount = 0;
+
+        for (const [productId, quantity] of requestedMap.entries()) {
+          const orderInfo = orderItemMap.get(productId)!;
+          if (quantity > orderInfo.qty) {
+            throw new Error(
+              `Quantity for product ${orderInfo.product.code || productId} exceeds order quantity (${orderInfo.qty})`,
+            );
           }
-        }
+          const code = (orderInfo.product.code || "").toUpperCase();
+          const isBox = code.startsWith("BOX-");
+          const price = orderInfo.product.price || 0;
 
-        // Validate barcodes exist in inventory and are READY
-        const barcodes = items.map(item => item.barcode.toUpperCase());
-        const inventoryItems = await tx.inventory.findMany({
-          where: {
-            barcode: { in: barcodes },
-            status: "READY"
-          },
-          select: {
-            barcode: true,
-            productId: true,
-            product: {
+          if (isBox) {
+            if (quantity > 0) {
+              boxItems.push({ productId, code, price, quantity });
+            }
+          } else {
+            const inventory = await tx.inventory.findMany({
+              where: {
+                productId,
+                status: "READY",
+                location: order.location,
+              },
               select: {
                 id: true,
-                price: true
-              }
+                barcode: true,
+              },
+              orderBy: { id: "asc" },
+              take: quantity,
+            });
+
+            if (inventory.length < quantity) {
+              throw new Error(`Stok ${code || productId} di ${order.location} tidak mencukupi`);
+            }
+
+            const ids = inventory.map((inv) => inv.id);
+            if (ids.length > 0) {
+              await tx.inventory.updateMany({
+                where: { id: { in: ids } },
+                data: { status: "SOLD" },
+              });
+            }
+
+            for (const inv of inventory) {
+              inventoryUsages.push({ productId, barcode: inv.barcode, price });
             }
           }
-        });
 
-        if (inventoryItems.length !== barcodes.length) {
-          throw new Error("Some barcodes are not available in inventory");
+          const diff = orderInfo.qty - quantity;
+          if (diff > 0) {
+            refunds.push({
+              productId,
+              name: orderInfo.product.name || `Produk ${productId}`,
+              code: code || "-",
+              quantity: diff,
+            });
+            refundAmount += diff * orderInfo.price;
+            if (quantity === 0) {
+              orderItemUpdates.push(tx.orderItem.delete({ where: { id: orderInfo.id } }));
+            } else {
+              orderItemUpdates.push(
+                tx.orderItem.update({
+                  where: { id: orderInfo.id },
+                  data: { quantity },
+                }),
+              );
+            }
+          }
+
+          processedProducts.add(productId);
         }
 
-        const inventoryMap = new Map(inventoryItems.map(inv => [inv.barcode, inv]));
+        for (const orderItem of order.items) {
+          if (processedProducts.has(orderItem.productId)) continue;
+          if (orderItem.quantity <= 0) continue;
+          const code = (orderItem.product?.code || "").toUpperCase();
+          refunds.push({
+            productId: orderItem.productId,
+            name: orderItem.product?.name || `Produk ${orderItem.productId}`,
+            code: code || "-",
+            quantity: orderItem.quantity,
+          });
+          refundAmount += orderItem.quantity * orderItem.price;
+          orderItemUpdates.push(tx.orderItem.delete({ where: { id: orderItem.id } }));
+        }
 
-        // Create delivery
+        if (orderItemUpdates.length > 0) {
+          await Promise.all(orderItemUpdates);
+          if (refundAmount > 0 && order.totalAmount !== null && order.totalAmount !== undefined) {
+            await tx.order.update({
+              where: { id: order.id },
+              data: { totalAmount: Math.max(0, order.totalAmount - refundAmount) },
+            });
+          }
+        }
+
         const delivery = await tx.delivery.create({
           data: {
             orderId,
             deliveryDate: deliveryDate ? new Date(deliveryDate) : null,
             status: deliveryDate ? "delivered" : "pending",
-            ongkirPlan: ongkirPlan || null,
+            ongkirPlan: order.ongkirPlan || null,
             ongkirActual: ongkirActual || null,
           },
           select: {
@@ -218,30 +323,53 @@ export async function POST(req: NextRequest) {
             orderId: true,
             deliveryDate: true,
             status: true,
-            createdAt: true
-          }
+            ongkirPlan: true,
+            createdAt: true,
+          },
         });
 
-        // Create delivery items and mark inventory as SOLD
-        const deliveryItems = await Promise.all(
-          items.map(async (item) => {
-            const inventory = inventoryMap.get(item.barcode.toUpperCase());
-            if (!inventory) {
-              throw new Error(`Inventory not found for barcode ${item.barcode}`);
-            }
+        const deliveryItems: Array<{
+          id: number;
+          productId: number;
+          barcode: string;
+          price: number;
+          product: { id: number; code: string; name: string };
+        }> = [];
 
-            // Mark inventory as SOLD
-            await tx.inventory.update({
-              where: { barcode: item.barcode.toUpperCase() },
-              data: { status: "SOLD" }
-            });
+        for (const usage of inventoryUsages) {
+          const item = await tx.deliveryItem.create({
+            data: {
+              deliveryId: delivery.id,
+              productId: usage.productId,
+              barcode: usage.barcode.toUpperCase(),
+              price: usage.price,
+            },
+            select: {
+              id: true,
+              productId: true,
+              barcode: true,
+              price: true,
+              product: {
+                select: {
+                  id: true,
+                  code: true,
+                  name: true,
+                },
+              },
+            },
+          });
+          deliveryItems.push(item);
+        }
 
-            return tx.deliveryItem.create({
+        for (const box of boxItems) {
+          for (let i = 0; i < box.quantity; i++) {
+            const barcode = `BOX-AUTO-${box.code}-${Date.now()}-${i}`;
+            const item = await tx.deliveryItem.create({
               data: {
                 deliveryId: delivery.id,
-                productId: item.productId,
-                barcode: item.barcode.toUpperCase(),
-                price: inventory.product.price,
+                productId: box.productId,
+                barcode,
+                price: box.price,
               },
               select: {
                 id: true,
@@ -252,20 +380,25 @@ export async function POST(req: NextRequest) {
                   select: {
                     id: true,
                     code: true,
-                    name: true
-                  }
-                }
-              }
+                    name: true,
+                  },
+                },
+              },
             });
-          })
-        );
+            deliveryItems.push(item);
+          }
+        }
 
-        return { ...delivery, items: deliveryItems };
+        if (deliveryItems.length === 0) {
+          throw new Error("Tidak ada item yang dikirim");
+        }
+
+        return { ...delivery, items: deliveryItems, refunds };
       });
-    }, 2, 'deliveries-create');
+    }, 2, "deliveries-create");
 
     // Send WhatsApp notification if ongkir fields are provided
-    if (ongkirPlan !== undefined && ongkirActual !== undefined) {
+    if (created.ongkirPlan !== null && created.ongkirPlan !== undefined && ongkirActual !== undefined) {
       try {
         // Get order details for notification
         const orderDetails = await withRetry(async () => {
@@ -280,8 +413,9 @@ export async function POST(req: NextRequest) {
         }, 2, 'deliveries-get-order-details');
 
         if (orderDetails) {
-          const costDifference = ongkirActual - ongkirPlan;
-          const costDifferencePercent = ongkirPlan > 0 ? (costDifference / ongkirPlan) * 100 : 0;
+          const planValue = created.ongkirPlan || 0;
+          const costDifference = ongkirActual - planValue;
+          const costDifferencePercent = planValue > 0 ? (costDifference / planValue) * 100 : 0;
 
           const notificationData: DeliveryNotificationData = {
             outlet: orderDetails.outlet,
@@ -289,7 +423,7 @@ export async function POST(req: NextRequest) {
             customer: orderDetails.customer || "-",
             orderId: orderId,
             deliveryDate: created.deliveryDate?.toISOString() || new Date().toISOString(),
-            ongkirPlan,
+            ongkirPlan: planValue,
             ongkirActual,
             costDifference,
             costDifferencePercent,

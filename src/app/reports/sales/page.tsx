@@ -4,6 +4,7 @@ import { Label } from "../../../components/ui/label";
 import { Button } from "../../../components/ui/button";
 import { DateTimePicker } from "../../../components/ui/date-picker";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../components/ui/table";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../components/ui/select";
 import { useAuth } from "../../providers";
 import { getStartOfDayJakarta, getEndOfDayJakarta } from "../../../lib/timezone";
 
@@ -12,6 +13,8 @@ export default function ReportsSalesPage() {
   const [sales, setSales] = useState<any>(null);
   const [from, setFrom] = useState<Date | undefined>(undefined);
   const [to, setTo] = useState<Date | undefined>(undefined);
+  const [filterType, setFilterType] = useState<"all" | "retail" | "b2b">("all");
+  const [b2bPage, setB2bPage] = useState(1);
   const [sendingWhatsApp, setSendingWhatsApp] = useState(false);
   const [whatsappMessage, setWhatsappMessage] = useState<string | null>(null);
 
@@ -41,10 +44,64 @@ export default function ReportsSalesPage() {
   };
 
   useEffect(() => { if (user?.role === "Admin" || user?.role === "Manager") load(); }, [load, user]);
+  useEffect(() => { setB2bPage(1); }, [filterType, sales, from, to]);
 
   if (user?.role !== "Admin" && user?.role !== "Manager") {
     return <main className="p-6"><div className="text-sm text-gray-600">Akses ditolak.</div></main>;
   }
+
+  const filteredSales = (() => {
+    const rows = (sales?.sales || []) as any[];
+    if (filterType === "b2b") return rows.filter((r) => r.source === "B2B");
+    if (filterType === "retail") return rows.filter((r) => r.source !== "B2B");
+    return rows;
+  })();
+  const b2bRows = filteredSales.filter((r: any) => r.source === "B2B");
+  const B2B_PAGE_SIZE = 5;
+  const b2bPageCount = Math.max(1, Math.ceil(b2bRows.length / B2B_PAGE_SIZE));
+  const pagedB2BRows = b2bRows.slice((b2bPage - 1) * B2B_PAGE_SIZE, b2bPage * B2B_PAGE_SIZE);
+
+  const aggregates = (() => {
+    const byOutlet: Record<string, { count: number; actual: number; original: number; potongan: number }> = {};
+    const byOutletRegion: Record<string, { count: number; actual: number; original: number; potongan: number }> = {};
+    let totalActual = 0;
+    let totalOriginal = 0;
+    let totalPotongan = 0;
+
+    const retailRows = filteredSales.filter((r) => r.source !== "B2B");
+
+    for (const row of filteredSales) {
+      const actual = row.actualReceived || 0;
+      const original = row.originalBeforeDiscount || 0;
+      const pot = row.potongan || 0;
+      totalActual += actual;
+      totalOriginal += original;
+      totalPotongan += pot;
+    }
+
+    for (const row of retailRows) {
+      const actual = row.actualReceived || 0;
+      const original = row.originalBeforeDiscount || 0;
+      const pot = row.potongan || 0;
+
+      byOutlet[row.outlet] ||= { count: 0, actual: 0, original: 0, potongan: 0 };
+      byOutlet[row.outlet].count += 1;
+      byOutlet[row.outlet].actual += actual;
+      byOutlet[row.outlet].original += original;
+      byOutlet[row.outlet].potongan += pot;
+
+      const regionKey = `${row.outlet} ${row.location || ""}`.trim();
+      byOutletRegion[regionKey] ||= { count: 0, actual: 0, original: 0, potongan: 0 };
+      byOutletRegion[regionKey].count += 1;
+      byOutletRegion[regionKey].actual += actual;
+      byOutletRegion[regionKey].original += original;
+      byOutletRegion[regionKey].potongan += pot;
+    }
+
+    const avgPotonganPct = totalOriginal > 0 ? Math.round(((totalPotongan / totalOriginal) * 100) * 10) / 10 : null;
+
+    return { byOutlet, byOutletRegion, totalActual, avgPotonganPct, transactions: filteredSales.length, retailRows };
+  })();
 
   return (
     <main className="p-6 space-y-6">
@@ -71,23 +128,99 @@ export default function ReportsSalesPage() {
       </section>
 
       <section>
-        <h2 className="font-medium mb-2">Revenue Overview</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="space-y-2 border rounded p-4">
-            <div className="font-medium text-sm text-muted-foreground">Actual Total</div>
-            <div className="text-2xl font-semibold">{sales ? sales.totalActual.toLocaleString("id-ID") : 0}</div>
-            <div className="text-sm text-muted-foreground">Rata-rata potongan %: {sales && sales.avgPotonganPct != null ? `${sales.avgPotonganPct}%` : "-"}</div>
-          </div>
-          <div className="space-y-2 border rounded p-4">
-            <div className="font-medium text-sm text-muted-foreground">Transactions</div>
-            <div className="text-2xl font-semibold">{sales && sales.sales ? sales.sales.length.toLocaleString("id-ID") : 0}</div>
-          </div>
+        <h2 className="font-medium mb-2">Filter</h2>
+        <div className="flex gap-3 items-center">
+          <Label className="text-sm">Tampilkan</Label>
+          <Select value={filterType} onValueChange={(v) => setFilterType(v as any)}>
+            <SelectTrigger className="w-44">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Semua (Retail + B2B)</SelectItem>
+              <SelectItem value="retail">Retail saja</SelectItem>
+              <SelectItem value="b2b">B2B saja</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       </section>
 
       <section>
+        <h2 className="font-medium mb-2">Revenue Overview</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="space-y-2 border rounded p-4">
+            <div className="font-medium text-sm text-muted-foreground">Actual Total</div>
+            <div className="text-2xl font-semibold">{aggregates.totalActual.toLocaleString("id-ID")}</div>
+            <div className="text-sm text-muted-foreground">Rata-rata potongan %: {aggregates.avgPotonganPct != null ? `${aggregates.avgPotonganPct}%` : "-"}</div>
+          </div>
+          <div className="space-y-2 border rounded p-4">
+            <div className="font-medium text-sm text-muted-foreground">Transactions</div>
+            <div className="text-2xl font-semibold">{aggregates.transactions.toLocaleString("id-ID")}</div>
+          </div>
+        </div>
+      </section>
+
+      {/* B2B Orders (Wholesale/Cafe from B2B table) */}
+      <section>
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="font-medium">Orders B2B (Wholesale/Cafe)</h2>
+          <div className="text-sm text-gray-600">
+            Total actual: Rp {(() => {
+              const rows = filteredSales.filter((s: any) => s.source === "B2B");
+              const total = rows.reduce((acc: number, r: any) => acc + (r.actualReceived || 0), 0);
+              return total.toLocaleString("id-ID");
+            })()}
+          </div>
+        </div>
+        {filteredSales.some((s: any) => s.source === "B2B") ? (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>ID</TableHead>
+                <TableHead>Outlet</TableHead>
+                <TableHead>Customer</TableHead>
+                <TableHead>Location</TableHead>
+                <TableHead>Date</TableHead>
+                <TableHead className="text-right">Total (Rp)</TableHead>
+                <TableHead className="text-right">Actual (Rp)</TableHead>
+                <TableHead className="text-center">Items</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {pagedB2BRows.map((row) => (
+                <TableRow key={`b2b-${row.id}`}>
+                  <TableCell>{row.id}</TableCell>
+                  <TableCell>{row.outlet}</TableCell>
+                  <TableCell>{row.customer || "-"}</TableCell>
+                  <TableCell>{row.location || "-"}</TableCell>
+                  <TableCell>{row.orderDate ? new Date(row.orderDate).toLocaleDateString("id-ID") : "-"}</TableCell>
+                  <TableCell className="text-right">{(row.total || 0).toLocaleString("id-ID")}</TableCell>
+                  <TableCell className="text-right">{(row.actualReceived || 0).toLocaleString("id-ID")}</TableCell>
+                  <TableCell className="text-center">{row.itemsCount || 0}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        ) : (
+          <div className="text-sm text-muted-foreground">Tidak ada data B2B pada periode ini.</div>
+        )}
+        {b2bRows.length > B2B_PAGE_SIZE && (
+          <div className="flex items-center justify-end gap-3 mt-3">
+            <div className="text-sm text-gray-600">
+              Page {b2bPage} / {b2bPageCount}
+            </div>
+            <Button variant="outline" size="sm" disabled={b2bPage <= 1} onClick={() => setB2bPage((p) => Math.max(1, p - 1))}>
+              Prev
+            </Button>
+            <Button variant="outline" size="sm" disabled={b2bPage >= b2bPageCount} onClick={() => setB2bPage((p) => Math.min(b2bPageCount, p + 1))}>
+              Next
+            </Button>
+          </div>
+        )}
+      </section>
+
+      <section>
         <h2 className="font-medium mb-2">Outlet + Region</h2>
-        {sales && sales.byOutletRegion && Object.keys(sales.byOutletRegion).length > 0 ? (
+        {Object.keys(aggregates.byOutletRegion).length > 0 ? (
           <Table>
             <TableHeader>
               <TableRow>
@@ -98,7 +231,7 @@ export default function ReportsSalesPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {Object.entries(sales.byOutletRegion).map(([k, v]: any) => (
+              {Object.entries(aggregates.byOutletRegion).map(([k, v]: any) => (
                 <TableRow key={k}>
                   <TableCell>{k}</TableCell>
                   <TableCell className="text-right">{v.count}</TableCell>
@@ -116,16 +249,19 @@ export default function ReportsSalesPage() {
       {/* Outlet Share (%) */}
       <section>
         <h2 className="font-medium mb-2">Outlet Share (%)</h2>
-        {sales && sales.byOutlet && Object.keys(sales.byOutlet).length > 0 ? (
+        {Object.keys(aggregates.byOutlet).length > 0 ? (
           <div className="space-y-2">
-            {Object.entries(sales.byOutlet).map(([name, v]: any) => (
-              <div key={name} className="flex items-center justify-between">
-                <span>{name}</span>
-                <span className="tabular-nums">
-                  {sales.totalActual > 0 ? `${Math.round((((v as any).actual || 0) / sales.totalActual) * 1000) / 10}%` : "-"}
-                </span>
-              </div>
-            ))}
+            {(() => {
+              const totalRetailActual = Object.values(aggregates.byOutlet).reduce((acc: number, v: any) => acc + (v.actual || 0), 0);
+              return Object.entries(aggregates.byOutlet).map(([name, v]: any) => (
+                <div key={name} className="flex items-center justify-between">
+                  <span>{name}</span>
+                  <span className="tabular-nums">
+                    {totalRetailActual > 0 ? `${Math.round((((v as any).actual || 0) / totalRetailActual) * 1000) / 10}%` : "-"}
+                  </span>
+                </div>
+              ));
+            })()}
           </div>
         ) : (
           <div className="text-sm text-muted-foreground">Tidak ada data.</div>

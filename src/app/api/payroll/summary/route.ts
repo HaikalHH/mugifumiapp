@@ -21,11 +21,12 @@ export async function GET(req: Request) {
     const from = new Date(`${y}-${String(m).padStart(2, "0")}-01T00:00:00.000Z`);
     const to = new Date(new Date(from).setUTCMonth(from.getUTCMonth() + 1));
 
-    const [users, attendance, overtime, bonuses] = await Promise.all([
+    const [users, attendance, overtime, bonuses, manualPenalties] = await Promise.all([
       prisma.user.findMany({ orderBy: { id: "asc" } }),
       prisma.attendance.findMany({ where: { date: { gte: from, lt: to } } }),
       prisma.overtimeRequest.findMany({ where: { startAt: { gte: from, lt: to }, status: "APPROVED" } }),
       prisma.userBonus.findMany({ where: { year: y, month: m } }),
+      prisma.manualPenalty.findMany({ where: { year: y, month: m } }),
     ]);
 
     const byUser: Record<number, any> = {};
@@ -35,7 +36,9 @@ export async function GET(req: Request) {
       byUser[u.id] = {
         user: { id: u.id, name: u.name, username: u.username, role: u.role, baseSalary: u.baseSalary, hourlyRate, penaltyRate },
         totals: { latenessMinutes: 0, workedMinutes: 0, overtimeMinutes: 0 },
-        penalty: 0,
+        penalty: 0, // lateness
+        manualPenalty: 0,
+        manualPenaltyDetails: [] as Array<{ amount: number; reason: string | null }>,
         overtimePay: 0,
         netSalary: u.baseSalary,
         bonus: 0,
@@ -75,6 +78,19 @@ export async function GET(req: Request) {
     for (const b of bonuses) {
       const u = byUser[b.userId];
       if (u) u.bonus = (u.bonus || 0) + (b.amount || 0);
+    }
+    // Attach manual penalties
+    for (const p of manualPenalties) {
+      const u = byUser[p.userId];
+      if (!u) continue;
+      u.manualPenalty += p.amount || 0;
+      u.manualPenaltyDetails.push({ amount: p.amount || 0, reason: p.reason || null });
+    }
+    // Recompute net salary with manual penalties
+    for (const idStr of Object.keys(byUser)) {
+      const v = byUser[Number(idStr)];
+      const totalPenalty = (v.penalty || 0) + (v.manualPenalty || 0);
+      v.netSalary = Math.max(0, v.user.baseSalary - totalPenalty + v.overtimePay);
     }
     const overtimeDetails = overtime.map((o) => {
       const mins = Math.max(0, Math.round((o.endAt.getTime() - o.startAt.getTime()) / 60000));

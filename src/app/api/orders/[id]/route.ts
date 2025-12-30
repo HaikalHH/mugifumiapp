@@ -27,18 +27,22 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       customer,
       status,
       orderDate,
+      deliveryDate,
       location,
       discount,
       actPayout,
+      ongkirPlan,
       items, // Array of { productId, quantity }
     } = body as {
       outlet: string;
       customer?: string;
       status?: string;
       orderDate?: string;
+      deliveryDate?: string;
       location: string;
       discount?: number | null;
       actPayout?: number | null;
+      ongkirPlan?: number | null;
       items?: Array<{ productId: number; quantity: number }>;
     };
 
@@ -68,6 +72,19 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     }
 
     const isDelivered = existingOrder.deliveries.length > 0;
+    const isWhatsAppOutlet = outlet.toLowerCase() === "whatsapp";
+    if (!orderDate) {
+      return NextResponse.json({ error: "orderDate is required" }, { status: 400 });
+    }
+    if (!deliveryDate) {
+      return NextResponse.json({ error: "deliveryDate is required" }, { status: 400 });
+    }
+    if (isWhatsAppOutlet) {
+      if (ongkirPlan === undefined || ongkirPlan === null || Number(ongkirPlan) <= 0) {
+        return NextResponse.json({ error: "ongkirPlan is required for WhatsApp orders" }, { status: 400 });
+      }
+    }
+
     // If not delivered, we still require at least one item in payload
     if (!isDelivered && (!items || items.length === 0)) {
       return NextResponse.json({ error: "at least one item is required" }, { status: 400 });
@@ -95,9 +112,11 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       subtotal = resolvedItems.reduce((sum, it) => sum + (it.price * it.quantity), 0);
     }
 
-    const totalAmount = discount 
+    const ongkirValue = isWhatsAppOutlet ? Math.round(Number(ongkirPlan || 0)) : 0;
+    const afterDiscount = discount 
       ? Math.round(subtotal * (1 - discount / 100))
       : subtotal;
+    const totalAmount = afterDiscount + ongkirValue;
 
     // Use transaction to update order and items
     const updatedOrder = await withRetry(async () => {
@@ -116,11 +135,13 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
             outlet,
             customer: customer || null,
             status: normalizeOrderStatus(status),
-            orderDate: orderDate ? new Date(orderDate) : new Date(),
+            orderDate: new Date(orderDate),
+            deliveryDate: new Date(deliveryDate),
             location,
             discount: typeof discount === "number" && Number.isFinite(discount) ? discount : null,
-            totalAmount: totalAmount,
+            totalAmount,
             actPayout: actPayout || null,
+            ongkirPlan: isWhatsAppOutlet ? ongkirValue : null,
           },
           select: {
             id: true,
@@ -128,10 +149,15 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
             customer: true,
             status: true,
             orderDate: true,
+            deliveryDate: true,
             location: true,
             discount: true,
             totalAmount: true,
             actPayout: true,
+            ongkirPlan: true,
+            paymentLink: true,
+            midtransOrderId: true,
+            midtransTransactionId: true,
             createdAt: true,
             deliveries: {
               select: {

@@ -40,10 +40,12 @@ export async function GET(req: NextRequest) {
             outlet: true,
             customer: true,
             orderDate: true,
+            deliveryDate: true,
             location: true,
             status: true,
             totalAmount: true,
             actPayout: true,
+            ongkirPlan: true,
             items: {
               select: {
                 id: true,
@@ -61,7 +63,11 @@ export async function GET(req: NextRequest) {
               }
             }
           },
-          orderBy: { orderDate: 'asc' },
+          orderBy: [
+            { deliveryDate: { sort: 'asc', nulls: 'last' } },
+            { orderDate: 'asc' },
+            { id: 'asc' }
+          ],
           skip,
           take: pageSize
         });

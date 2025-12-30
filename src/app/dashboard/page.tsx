@@ -6,16 +6,18 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { Label } from "../../components/ui/label";
 
 type StockInfo = { total: number; reserved: number; available: number };
+type PendingOrder = { id: number; customer?: string; outlet?: string; status?: string; actPayout?: number; location?: string };
 
 export default function DashboardPage() {
   const { user } = useAuth();
-  const [pendingOrders, setPendingOrders] = useState<any[]>([]);
+  const [pendingOrders, setPendingOrders] = useState<PendingOrder[]>([]);
   const [negatives, setNegatives] = useState<Array<{ key: string; available: number; loc: string }>>([]);
   const [alerts, setAlerts] = useState<Array<{ id: number; customer?: string; outlet?: string; status?: string; actPayout?: number }>>([]);
   const [net, setNet] = useState<number | null>(null);
   const [baseAfterPenalty, setBaseAfterPenalty] = useState<number | null>(null);
   const [overtimePay, setOvertimePay] = useState<number | null>(null);
   const [monthBonus, setMonthBonus] = useState<number | null>(null);
+  const [penaltyBreakdown, setPenaltyBreakdown] = useState<{ lateness: number; manual: number; details: Array<{ amount: number; reason: string | null }> } | null>(null);
   const [yearly, setYearly] = useState<null | {
     year: number;
     months: Array<{ month: number; income: number; expense: number; profit: number }>;
@@ -38,13 +40,16 @@ export default function DashboardPage() {
     const isBaker = hasRole(user, "Baker");
     const locLock = lockedLocation(user);
 
-    const tasks: Promise<any>[] = [];
+    const tasks: Promise<void>[] = [];
     // For Jakarta/Bandung dashboard: pending orders + negative stock (locked region)
     if (isBandung || isJakarta) {
       const params = new URLSearchParams({ page: "1", pageSize: "10" });
       if (locLock) params.set("location", locLock);
       tasks.push(
-        fetch(`/api/orders/pending?${params.toString()}`).then((r) => r.json()).then((d) => setPendingOrders(d.rows || [])).catch(() => setPendingOrders([]))
+        fetch(`/api/orders/pending?${params.toString()}`)
+          .then((r) => r.json())
+          .then((d) => setPendingOrders(Array.isArray(d.rows) ? d.rows as PendingOrder[] : []))
+          .catch(() => setPendingOrders([]))
       );
       tasks.push(
         fetch(`/api/inventory/overview`).then((r) => r.json()).then((d) => {
@@ -82,7 +87,7 @@ export default function DashboardPage() {
       const params = new URLSearchParams({ page: "1", pageSize: "20" });
       tasks.push(
         fetch(`/api/orders?${params.toString()}`).then((r) => r.json()).then((d) => {
-          const items = (d.rows || []).filter((o: any) => String(o.status).toUpperCase() === "NOT PAID" || (o.outlet && (o.outlet === "Tokopedia" || o.outlet === "Shopee" || o.outlet === "Wholesale" || o.outlet === "Complain") && (!o.actPayout || Number(o.actPayout) === 0)));
+          const items = (Array.isArray(d.rows) ? d.rows as PendingOrder[] : []).filter((o) => String(o.status || "").toUpperCase() === "NOT PAID" || (o.outlet && (o.outlet === "Tokopedia" || o.outlet === "Shopee" || o.outlet === "Wholesale" || o.outlet === "Complain") && (!o.actPayout || Number(o.actPayout) === 0)));
           setAlerts(items);
         }).catch(() => setAlerts([]))
       );
@@ -92,16 +97,32 @@ export default function DashboardPage() {
     if (isSales || isBandung || isJakarta || isBaker) {
       tasks.push(
         fetch(`/api/payroll/summary?month=${monthStr}`).then((r) => r.json()).then((d) => {
-          const me = (d.users || []).find((x: any) => x.user?.id === user.id);
+          type PayrollSummaryRow = {
+            user: { id: number; baseSalary?: number };
+            penalty?: number;
+            manualPenalty?: number;
+            manualPenaltyDetails?: Array<{ amount: number; reason: string | null }>;
+            overtimePay?: number;
+            netSalary?: number;
+            bonus?: number;
+          };
+          const usersArr: PayrollSummaryRow[] = Array.isArray(d.users) ? d.users : [];
+          const me = usersArr.find((x) => x.user?.id === user.id);
           if (me) {
-            setNet(me.netSalary);
+            setNet(me.netSalary ?? 0);
             const base = me.user?.baseSalary || 0;
-            const penalty = me.penalty || 0;
+            const penalty = (me.penalty || 0) + (me.manualPenalty || 0);
             setBaseAfterPenalty(Math.max(0, base - penalty));
             setOvertimePay(me.overtimePay || 0);
             setMonthBonus(me.bonus || 0);
+            setPenaltyBreakdown({
+              lateness: me.penalty || 0,
+              manual: me.manualPenalty || 0,
+              details: me.manualPenaltyDetails || [],
+            });
           } else {
             setNet(null); setBaseAfterPenalty(null); setOvertimePay(null); setMonthBonus(null);
+            setPenaltyBreakdown(null);
           }
         }).catch(() => setNet(null))
       );
@@ -323,6 +344,22 @@ export default function DashboardPage() {
           <div className="text-2xl font-semibold">Rp {net != null ? net.toLocaleString('id-ID') : 0}</div>
           <div className="mt-1 text-sm text-gray-700">
             <div>Pokok (setelah potongan): <span className="font-medium">Rp {Math.max(0, baseAfterPenalty || 0).toLocaleString('id-ID')}</span></div>
+            {penaltyBreakdown && (
+              <div className="text-xs text-gray-600 space-y-1 mt-1">
+                <div>Potongan telat: Rp {(penaltyBreakdown.lateness || 0).toLocaleString("id-ID")}</div>
+                <div>Potongan denda: Rp {(penaltyBreakdown.manual || 0).toLocaleString("id-ID")}</div>
+                {penaltyBreakdown.details && penaltyBreakdown.details.length > 0 && (
+                  <div>
+                    <div className="font-medium text-gray-700">Detail penalty manual:</div>
+                    <ul className="list-disc list-inside space-y-0.5">
+                      {penaltyBreakdown.details.map((d, idx) => (
+                        <li key={idx}>Rp {d.amount.toLocaleString("id-ID")}{d.reason ? ` - ${d.reason}` : ""}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
             <div>Overtime: <span className="font-medium">Rp {Math.max(0, overtimePay || 0).toLocaleString('id-ID')}</span></div>
             <div>Bonus Terkumpul Bulan Ini: <span className="font-medium">Rp {Math.max(0, monthBonus || 0).toLocaleString('id-ID')}</span></div>
           </div>

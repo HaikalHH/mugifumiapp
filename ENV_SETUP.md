@@ -14,10 +14,11 @@ ULTRAMSG_PHONES=+6281275167471,+6281378471123,+6281276167733,+6281261122306
 
 # Ultramsg Phone Numbers for Order Notifications (BARU - tambahkan ini)
 ULTRAMSG_ORDER_PHONE_JAKARTA=+628986723926
-ULTRAMSG_ORDER_PHONE_BANDUNG=+6281320699662
+ULTRAMSG_ORDER_PHONE_BANDUNG=+6281276167733
 
 # Cron Job Secret (sudah ada)
 CRON_SECRET=mugifumi_cron_2025_s3cr3t_k3y_xYz123
+
 ```
 
 ## Penjelasan Environment Variables
@@ -43,7 +44,7 @@ CRON_SECRET=mugifumi_cron_2025_s3cr3t_k3y_xYz123
 
 Jika environment variables tidak diset, sistem akan menggunakan default values:
 - Jakarta: `+628986723926`
-- Bandung: `+6281320699662`
+- Bandung: `+6281276167733`
 
 ## Setup di Vercel/Production:
 

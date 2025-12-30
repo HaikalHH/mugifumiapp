@@ -9,9 +9,32 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { Badge } from "../../../components/ui/badge";
 import { getEndOfDayJakarta, getStartOfDayJakarta } from "../../../lib/timezone";
 
+type MenuItemRow = {
+  productCode: string;
+  productName: string;
+  productPrice: number;
+  totalQuantity: number;
+  totalRevenue: number;
+  totalHppValue: number;
+  averagePrice: number;
+  outlets: string[];
+  locations: string[];
+};
+
+type MenuData = {
+  menuItems?: MenuItemRow[];
+  totals?: {
+    totalItems?: number;
+    totalRevenue?: number;
+    totalHppValue?: number;
+    totalProfit?: number;
+    uniqueProducts?: number;
+  };
+};
+
 export default function ReportsGrossSalesCogsPage() {
   const { user } = useAuth();
-  const [menuItems, setMenuItems] = useState<any>(null);
+  const [menuItems, setMenuItems] = useState<MenuData | null>(null);
   const [from, setFrom] = useState<Date | undefined>(undefined);
   const [to, setTo] = useState<Date | undefined>(undefined);
   const [menuLocation, setMenuLocation] = useState("all");
@@ -41,6 +64,7 @@ export default function ReportsGrossSalesCogsPage() {
   return (
     <main className="p-6 space-y-6">
       <h1 className="text-xl font-semibold">Reports · Gross Sales & COGS</h1>
+      <p className="text-xl font-semibold">REPORT DIBAWAH ADALAH JUMLAH ROTI YANG KELUAR TERMASUK WASTE & TIDAK KENA POTONGAN</p>
 
       <section>
         <h2 className="font-medium mb-2">Periode</h2>
@@ -118,7 +142,7 @@ export default function ReportsGrossSalesCogsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {menuItems && menuItems.menuItems && menuItems.menuItems.slice(0, 3).map((item: any) => (
+                {menuItems && menuItems.menuItems && menuItems.menuItems.slice(0, 3).map((item: MenuItemRow) => (
                   <TableRow key={item.productCode}>
                     <TableCell>
                       <div>
@@ -129,7 +153,7 @@ export default function ReportsGrossSalesCogsPage() {
                     <TableCell className="text-right font-medium">{item.totalQuantity}</TableCell>
                     <TableCell className="text-right">Rp {item.totalRevenue.toLocaleString("id-ID")}</TableCell>
                     <TableCell className="text-right">Rp {item.totalHppValue.toLocaleString("id-ID")}</TableCell>
-                    <TableCell className="text-right">Rp {item.averagePrice.toLocaleString("id-ID")}</TableCell>
+                    <TableCell className="text-right">Rp {(item.productPrice ?? item.averagePrice ?? 0).toLocaleString("id-ID")}</TableCell>
                     <TableCell>
                       <div className="flex flex-wrap gap-1">
                         {item.outlets.map((outlet: string) => (<Badge key={outlet} color="gray" className="text-xs">{outlet}</Badge>))}
@@ -160,14 +184,14 @@ export default function ReportsGrossSalesCogsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {menuItems.menuItems.map((item: any) => (
+                  {menuItems.menuItems.map((item: MenuItemRow) => (
                     <TableRow key={item.productCode}>
                       <TableCell className="font-mono text-sm">{item.productCode}</TableCell>
                       <TableCell className="font-medium">{item.productName}</TableCell>
                       <TableCell className="text-right font-medium">{item.totalQuantity}</TableCell>
                       <TableCell className="text-right">Rp {item.totalRevenue.toLocaleString("id-ID")}</TableCell>
                       <TableCell className="text-right">Rp {item.totalHppValue.toLocaleString("id-ID")}</TableCell>
-                      <TableCell className="text-right">Rp {item.averagePrice.toLocaleString("id-ID")}</TableCell>
+                      <TableCell className="text-right">Rp {(item.productPrice ?? item.averagePrice ?? 0).toLocaleString("id-ID")}</TableCell>
                       <TableCell>
                         <div className="flex flex-wrap gap-1">
                           {item.outlets.map((outlet: string) => (

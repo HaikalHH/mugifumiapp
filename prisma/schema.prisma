@@ -26,6 +26,7 @@ model User {
   attendances       Attendance[]
   overtimeRequests  OvertimeRequest[]
   bonuses           UserBonus[]
+  manualPenalties   ManualPenalty[]
 }
 
 model Attendance {
@@ -71,6 +72,7 @@ model Product {
   sales         SaleItem[]
   orderItems    OrderItem[]
   deliveryItems DeliveryItem[]
+  b2bOrderItems OrderB2BItem[] @relation("OrderB2BItemRetailProduct")
 }
 
 // Separate master data for planning helper
@@ -126,11 +128,16 @@ model Order {
   customer       String?
   status         String     @default("PAID")
   orderDate      DateTime
+  deliveryDate   DateTime?
   location       String
   discount       Float?
   totalAmount    Int?
   actPayout      Int?
+  ongkirPlan     Int?
   createdAt      DateTime   @default(now())
+  paymentLink    String?
+  midtransOrderId String?
+  midtransTransactionId String?
   items          OrderItem[]
   deliveries     Delivery[]
 }
@@ -165,6 +172,68 @@ model DeliveryItem {
   price       Int
   product     Product   @relation(fields: [productId], references: [id])
   delivery    Delivery  @relation(fields: [deliveryId], references: [id])
+}
+
+// B2B master product table (separate from retail)
+model ProductB2B {
+  id        Int      @id @default(autoincrement())
+  code      String   @unique
+  name      String
+  price     Int
+  hppPct    Float?   @map("hpp_pct")
+  hppValue  Int?     @map("hpp_value")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  items     OrderB2BItem[]
+
+  @@map("product_b2b")
+}
+
+// B2B order header (for Wholesale/Cafe)
+model OrderB2B {
+  id          Int            @id @default(autoincrement())
+  outlet      String
+  customer    String?
+  status      String         @default("PAID")
+  orderDate   DateTime       @map("order_date")
+  location    String
+  discount    Float?
+  totalAmount Int?           @map("total_amount")
+  actPayout   Int?           @map("act_payout")
+  createdAt   DateTime       @default(now()) @map("created_at")
+  items       OrderB2BItem[]
+
+  @@map("order_b2b")
+}
+
+// B2B order items
+model OrderB2BItem {
+  id              Int          @id @default(autoincrement())
+  orderId         Int          @map("order_id")
+  productId       Int?         @map("product_id")
+  retailProductId Int?         @map("retail_product_id")
+  productSource   String       @default("B2B") @map("product_source")
+  barcode         String?
+  quantity        Int
+  price           Int
+  product         ProductB2B?  @relation(fields: [productId], references: [id])
+  retailProduct   Product?     @relation("OrderB2BItemRetailProduct", fields: [retailProductId], references: [id])
+  order           OrderB2B     @relation(fields: [orderId], references: [id])
+
+  @@map("order_b2b_item")
+}
+
+model ManualPenalty {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  year      Int
+  month     Int
+  amount    Int
+  reason    String?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@index([userId, year, month])
 }
 
 // Ingredient master data (bahan)

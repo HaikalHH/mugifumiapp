@@ -7,7 +7,7 @@ const PHONE_NUMBERS = ULTRAMSG_PHONES.split(',').map(phone => phone.trim()).filt
 // Order notification phone numbers by region (from environment variables)
 const ORDER_PHONE_NUMBERS = {
   Jakarta: process.env.GREENAPI_ORDER_PHONE_JAKARTA || process.env.ULTRAMSG_ORDER_PHONE_JAKARTA || "+628986723926",
-  Bandung: process.env.GREENAPI_ORDER_PHONE_BANDUNG || process.env.ULTRAMSG_ORDER_PHONE_BANDUNG || "+6281320699662",
+  Bandung: process.env.GREENAPI_ORDER_PHONE_BANDUNG || process.env.ULTRAMSG_ORDER_PHONE_BANDUNG || "+6281276167733",
 };
 
 function resolveRegionPhone(location: string): string | null {

@@ -84,14 +84,16 @@ async function getOutletRegionReport(date?: Date): Promise<{ byOutletRegion: Rec
     const orderItems = order.items || [];
     const isCafe = order.outlet.toLowerCase() === "cafe";
     const isFree = order.outlet.toLowerCase() === "free";
+    const isWhatsApp = order.outlet.toLowerCase() === "whatsapp";
     
     // Calculate subtotal from order items
     const preDiscountSubtotal = orderItems.reduce((acc: number, item: any) => acc + (item.price * item.quantity), 0);
     const discountPct = needsDiscount(order.outlet) && typeof order.discount === "number" ? order.discount : 0;
+    const discountedSubtotal = Math.round(preDiscountSubtotal * (1 - (discountPct || 0) / 100));
 
     // Calculate ongkir potongan from deliveries (only for WhatsApp outlet)
     let ongkirPotongan = 0;
-    if (order.outlet.toLowerCase() === "whatsapp" && order.deliveries && order.deliveries.length > 0) {
+    if (isWhatsApp && order.deliveries && order.deliveries.length > 0) {
       for (const delivery of order.deliveries) {
         if (delivery.ongkirPlan && delivery.ongkirActual && delivery.status === "delivered") {
           const ongkirDifference = delivery.ongkirActual - delivery.ongkirPlan;
@@ -102,17 +104,27 @@ async function getOutletRegionReport(date?: Date): Promise<{ byOutletRegion: Rec
       }
     }
 
+    const resolvedActual = order.actPayout != null
+      ? order.actPayout
+      : (order.totalAmount != null ? order.totalAmount : discountedSubtotal);
+
     // For orders, actual received is actPayout if available, otherwise totalAmount
     // For Free outlet, set to 0
     // For Cafe outlet, if no actPayout, set to 0
-    const actual = isFree ? 0 : (isCafe ? (order.actPayout ?? 0) : (order.actPayout || order.totalAmount || null));
+    const actual = isFree
+      ? 0
+      : (isCafe
+        ? (order.actPayout ?? 0)
+        : (isWhatsApp
+          ? (resolvedActual != null ? Math.max(0, resolvedActual - ongkirPotongan) : null)
+          : resolvedActual));
 
     // Potongan calculation for orders (include ongkir potongan)
     const potongan = isFree
       ? preDiscountSubtotal + ongkirPotongan
       : (isCafe
-        ? (preDiscountSubtotal - (actual ?? 0) + ongkirPotongan)
-        : (actual != null ? (preDiscountSubtotal - actual + ongkirPotongan) : null));
+        ? (preDiscountSubtotal - (actual ?? 0))
+        : (actual != null ? (preDiscountSubtotal - actual) : null));
 
     const potonganPct = isFree
       ? 100

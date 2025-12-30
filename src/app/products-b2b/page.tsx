@@ -1,4 +1,5 @@
 "use client";
+
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
@@ -12,11 +13,11 @@ type Product = {
   code: string;
   name: string;
   price: number;
-  hppPct: number;
-  hppValue: number;
+  hppPct?: number | null;
+  hppValue?: number | null;
 };
 
-export default function ProductsPage() {
+export default function ProductsB2BPage() {
   const { user } = useAuth();
   const [items, setItems] = useState<Product[]>([]);
   const [form, setForm] = useState({ code: "", name: "", price: 0, hppPct: 0.3 });
@@ -24,7 +25,7 @@ export default function ProductsPage() {
   const [editForm, setEditForm] = useState({ name: "", price: 0, hppPct: 0.3 });
 
   const load = useCallback(async () => {
-    const res = await fetch("/api/products");
+    const res = await fetch("/api/b2b/products");
     const data = await res.json();
     setItems(data);
   }, []);
@@ -33,7 +34,7 @@ export default function ProductsPage() {
 
   const create = async (e: React.FormEvent) => {
     e.preventDefault();
-    const res = await fetch("/api/products", {
+    const res = await fetch("/api/b2b/products", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ...form, price: Number(form.price), hppPct: Number(form.hppPct) }),
@@ -45,7 +46,7 @@ export default function ProductsPage() {
   };
 
   const remove = async (id: number) => {
-    await fetch(`/api/products/${id}`, { method: "DELETE" });
+    await fetch(`/api/b2b/products/${id}`, { method: "DELETE" });
     load();
   };
 
@@ -54,7 +55,7 @@ export default function ProductsPage() {
     setEditForm({
       name: product.name,
       price: product.price,
-      hppPct: product.hppPct,
+      hppPct: product.hppPct || 0,
     });
   };
 
@@ -67,7 +68,7 @@ export default function ProductsPage() {
     e.preventDefault();
     if (!editingProduct) return;
 
-    const res = await fetch(`/api/products/${editingProduct.id}`, {
+    const res = await fetch(`/api/b2b/products/${editingProduct.id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -93,19 +94,20 @@ export default function ProductsPage() {
 
   return (
     <main className="p-6 space-y-6">
-      <h1 className="text-xl font-semibold">Products</h1>
+      <h1 className="text-xl font-semibold">Products B2B</h1>
+      <p className="text-sm text-gray-600">Master data produk untuk B2B (Wholesale/Cafe).</p>
       <form onSubmit={create} className="grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
         <div className="flex flex-col gap-1">
           <Label>Code</Label>
-          <Input placeholder="HOK-L / HOK-R / BRW" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} />
+          <Input placeholder="WHS-01" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} />
         </div>
         <div className="flex flex-col gap-1">
           <Label>Name</Label>
-          <Input placeholder="Hokkaido Large" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+          <Input placeholder="Produk B2B" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
         </div>
         <div className="flex flex-col gap-1">
           <Label>Price (Rp)</Label>
-          <Input type="number" placeholder="e.g. 35000" value={form.price} onChange={(e) => setForm({ ...form, price: Number(e.target.value) })} />
+          <Input type="number" placeholder="e.g. 50000" value={form.price} onChange={(e) => setForm({ ...form, price: Number(e.target.value) })} />
         </div>
         <div className="flex flex-col gap-1">
           <Label>HPP % (0-1)</Label>
@@ -133,8 +135,8 @@ export default function ProductsPage() {
               <TableCell>{p.code}</TableCell>
               <TableCell>{p.name}</TableCell>
               <TableCell className="text-right">{p.price.toLocaleString("id-ID")}</TableCell>
-              <TableCell className="text-right">{p.hppPct}</TableCell>
-              <TableCell className="text-right">{p.hppValue.toLocaleString("id-ID")}</TableCell>
+              <TableCell className="text-right">{p.hppPct ?? "-"}</TableCell>
+              <TableCell className="text-right">{p.hppValue != null ? p.hppValue.toLocaleString("id-ID") : "-"}</TableCell>
               <TableCell className="text-center">
                 <div className="flex gap-2 justify-center">
                   <Button variant="link" className="p-0 h-auto" onClick={() => startEdit(p)}>
@@ -150,7 +152,7 @@ export default function ProductsPage() {
         </TableBody>
       </Table>
 
-      {/* Edit Modal (shadcn Dialog) */}
+      {/* Edit Modal */}
       <Dialog open={Boolean(editingProduct)} onOpenChange={(open) => { if (!open) cancelEdit(); }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
@@ -175,7 +177,7 @@ export default function ProductsPage() {
               <Label>Price (Rp)</Label>
               <Input
                 type="number"
-                placeholder="e.g. 35000"
+                placeholder="e.g. 50000"
                 value={editForm.price}
                 onChange={(e) => setEditForm({ ...editForm, price: Number(e.target.value) })}
                 required
@@ -197,7 +199,7 @@ export default function ProductsPage() {
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={cancelEdit}>Cancel</Button>
-              <Button type="submit">Update Product</Button>
+              <Button type="submit">Update</Button>
             </DialogFooter>
           </form>
         </DialogContent>

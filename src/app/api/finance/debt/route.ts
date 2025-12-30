@@ -56,7 +56,10 @@ async function computeTotalOmsetPaid(from: Date, to: Date): Promise<number> {
       (hasProcessedDelivery && order.status !== "NOT PAID");
 
     if (shouldInclude) {
-      const actualAmount = isWhatsApp && hasProcessedDelivery ? (totalAmount - ongkirDifference) : (order.actPayout || 0);
+      const resolvedActual = order.actPayout != null ? order.actPayout : totalAmount;
+      const actualAmount = isWhatsApp && hasProcessedDelivery
+        ? (resolvedActual != null ? Math.max(0, resolvedActual - ongkirDifference) : 0)
+        : (order.actPayout ?? 0);
       if (actualAmount > 0) totalOmsetPaid += actualAmount;
     }
   }

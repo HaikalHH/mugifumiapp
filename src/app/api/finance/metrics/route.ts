@@ -133,10 +133,13 @@ export async function GET(req: NextRequest) {
       // Apply same logic as Reports Sales API
       const isFree = order.outlet.toLowerCase() === "free";
       const isCafe = order.outlet.toLowerCase() === "cafe";
+      const isWhatsApp = order.outlet.toLowerCase() === "whatsapp";
+      const totalAmount = order.totalAmount || preDiscountSubtotal;
+      const resolvedActual = order.actPayout != null ? order.actPayout : totalAmount;
       
       // Calculate ongkir difference for WhatsApp
       let ongkirDifference = 0;
-      if (order.outlet.toLowerCase() === "whatsapp" && order.deliveries && order.deliveries.length > 0) {
+      if (isWhatsApp && order.deliveries && order.deliveries.length > 0) {
         for (const delivery of order.deliveries) {
           if (delivery.ongkirPlan && delivery.ongkirActual && delivery.status === "delivered") {
             const diff = delivery.ongkirActual - delivery.ongkirPlan;
@@ -148,10 +151,13 @@ export async function GET(req: NextRequest) {
       }
       
       // Use same actual calculation as Reports Sales API (with ongkir difference for WhatsApp)
-      const actualAmount = isFree ? 0 : (isCafe ? (order.actPayout ?? 0) : 
-        (order.outlet.toLowerCase() === "whatsapp" ? 
-          ((order.actPayout || order.totalAmount || 0) - ongkirDifference) :
-          (order.actPayout || order.totalAmount || 0)));
+      const actualAmount = isFree
+        ? 0
+        : (isCafe
+          ? (order.actPayout ?? 0)
+          : (isWhatsApp
+            ? (resolvedActual != null ? Math.max(0, resolvedActual - ongkirDifference) : 0)
+            : (resolvedActual ?? 0)));
       
       // For actualRevenueByOutlet, we want total revenue (both paid and unpaid)
       const currentTotal = actualRevenueMap.get(order.outlet) || 0;
@@ -251,11 +257,12 @@ export async function GET(req: NextRequest) {
           (hasProcessedDelivery && order.status !== "NOT PAID");
         
         if (shouldInclude) {
-          // For WhatsApp with processed delivery, use totalAmount minus ongkir difference
+          const resolvedActual = order.actPayout != null ? order.actPayout : totalAmount;
+          // For WhatsApp with processed delivery, subtract ongkir difference from whichever value we have
           // For others, use actPayout
-          const actualAmount = isWhatsApp && hasProcessedDelivery ? 
-            (totalAmount - ongkirDifference) : 
-            (order.actPayout || 0);
+          const actualAmount = isWhatsApp && hasProcessedDelivery
+            ? (resolvedActual != null ? Math.max(0, resolvedActual - ongkirDifference) : 0)
+            : (order.actPayout ?? 0);
           
           if (actualAmount > 0) {
             const location = (order.location || "").trim();

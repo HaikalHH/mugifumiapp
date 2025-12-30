@@ -11,6 +11,8 @@ type SummaryUser = {
   user: { id: number; name: string; username: string; role: string; baseSalary: number; hourlyRate: number; penaltyRate: number };
   totals: { latenessMinutes: number; workedMinutes: number; overtimeMinutes: number };
   penalty: number;
+  manualPenalty?: number;
+  manualPenaltyDetails?: Array<{ amount: number; reason: string | null }>;
   overtimePay: number;
   netSalary: number;
   bonus?: number;
@@ -32,6 +34,8 @@ export default function SlipGajiPage() {
     user: { id: number; name: string; username: string; role: string; baseSalary: number; hourlyRate: number; penaltyRate: number };
     totals: { latenessMinutes: number; workedMinutes: number; overtimeMinutes: number };
     penalty: number;
+    manualPenalty?: number;
+    manualPenaltyDetails?: Array<{ amount: number; reason: string | null }>;
     overtimePay: number;
     netSalary: number;
     bonus?: number;
@@ -57,6 +61,7 @@ export default function SlipGajiPage() {
   const printPdf = () => {
     if (!me || !user) return;
     const monthLabel = `${String(Number(month)).padStart(2,'0')}/${year}`;
+    const manualPenaltyLines = (me.manualPenaltyDetails || []).map((d) => `- Rp ${Number(d.amount||0).toLocaleString('id-ID')}${d.reason ? ` (${d.reason})` : ""}`).join('<br/>');
     const html = `<!doctype html>
       <html>
       <head>
@@ -87,11 +92,13 @@ export default function SlipGajiPage() {
           <table>
             <tr><td>Pokok</td><td class='right'>Rp ${(me.user.baseSalary || 0).toLocaleString('id-ID')}</td></tr>
             <tr><td>Potongan Keterlambatan</td><td class='right'>Rp ${(me.penalty || 0).toLocaleString('id-ID')}</td></tr>
+            <tr><td>Potongan Denda</td><td class='right'>Rp ${(me.manualPenalty || 0).toLocaleString('id-ID')}</td></tr>
             <tr><td>Overtime</td><td class='right'>Rp ${(me.overtimePay || 0).toLocaleString('id-ID')}</td></tr>
             <tr><td>Bonus Bulan Ini</td><td class='right'>Rp ${(me.bonus || 0).toLocaleString('id-ID')}</td></tr>
             <tr><td class='bold'>Total (tanpa bonus)</td><td class='right bold'>Rp ${(me.netSalary || 0).toLocaleString('id-ID')}</td></tr>
             <tr><td class='bold'>Total + Bonus</td><td class='right bold'>Rp ${(Number(me.netSalary || 0) + Number(me.bonus || 0)).toLocaleString('id-ID')}</td></tr>
           </table>
+          ${manualPenaltyLines ? `<div class='sub mt'>Detail penalty manual:<br/>${manualPenaltyLines}</div>` : ''}
           <div class='sub mt'>Slip ini dihasilkan otomatis oleh sistem.</div>
         </div>
         <script>window.onload = () => { window.print(); };</script>
@@ -142,6 +149,17 @@ export default function SlipGajiPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
             <div>Pokok: <span className="font-medium">Rp {(me.user.baseSalary || 0).toLocaleString('id-ID')}</span></div>
             <div>Potongan Keterlambatan: <span className="font-medium">Rp {(me.penalty || 0).toLocaleString('id-ID')}</span></div>
+            <div>Potongan Denda: <span className="font-medium">Rp {(me.manualPenalty || 0).toLocaleString('id-ID')}</span></div>
+            {me.manualPenaltyDetails && me.manualPenaltyDetails.length > 0 && (
+              <div className="md:col-span-2 text-xs text-gray-600">
+                Detail penalty manual:
+                <ul className="list-disc list-inside space-y-0.5">
+                  {me.manualPenaltyDetails.map((d, idx) => (
+                    <li key={idx}>Rp {Number(d.amount || 0).toLocaleString('id-ID')}{d.reason ? ` - ${d.reason}` : ""}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
             <div>Overtime: <span className="font-medium">Rp {(me.overtimePay || 0).toLocaleString('id-ID')}</span></div>
             <div>Bonus Bulan Ini: <span className="font-medium">Rp {(me.bonus || 0).toLocaleString('id-ID')}</span></div>
           </div>

@@ -108,14 +108,19 @@ export async function GET(req: NextRequest) {
         }
       }
 
+      const resolvedActual = order.actPayout != null
+        ? order.actPayout
+        : (order.totalAmount != null ? order.totalAmount : null);
+
       // For orders, actual received is actPayout if available, otherwise totalAmount
       // For Free outlet, set to 0
       // For Cafe outlet, if no actPayout, set to 0
-      // For WhatsApp, if no actPayout, use totalAmount minus ongkir difference
+      // For WhatsApp, subtract ongkir difference even if actPayout is filled
       const actual = isFree ? 0 : 
         (isCafe ? (order.actPayout ?? 0) : 
-        (isWhatsApp ? (order.actPayout || (order.totalAmount || 0) - ongkirDifference) :
-        (order.actPayout || order.totalAmount || null)));
+        (isWhatsApp
+          ? (resolvedActual != null ? Math.max(0, resolvedActual - ongkirDifference) : null)
+          : resolvedActual));
 
       // Potongan calculation for orders:
       // - Free: 100% (all is potongan since actual is 0)

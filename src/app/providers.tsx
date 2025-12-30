@@ -104,7 +104,6 @@ export function hasAccess(
   if (page === "planProducts") {
     return roles.has("admin");
   }
-
   // Admin: no Attendance or Overtime (staff feature). Has approvals + payroll and others.
   if (roles.has("admin")) {
     if (page === "attendance" || page === "overtime") return false;

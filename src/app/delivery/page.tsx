@@ -14,7 +14,9 @@ type Order = {
   outlet: string;
   customer: string | null;
   orderDate: string;
+  deliveryDate?: string | null;
   location: string;
+  ongkirPlan?: number | null;
   items: Array<{
     id: number;
     productId: number;
@@ -110,8 +112,7 @@ export default function DeliveryPage() {
     ongkirPlan: "",
     ongkirActual: "",
   });
-  const [scannedItems, setScannedItems] = useState<Array<{ productId: number; barcode: string; product: any }>>([]);
-  const [scanInput, setScanInput] = useState("");
+  const [deliveryQuantities, setDeliveryQuantities] = useState<Record<number, number>>({});
   const [error, setError] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -121,6 +122,9 @@ export default function DeliveryPage() {
   const [pendingTotal, setPendingTotal] = useState(0);
   const [regionFilter, setRegionFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const hasExistingDelivery =
+    !!selectedOrder &&
+    (selectedOrder._deliveryData || (selectedOrder.deliveries && selectedOrder.deliveries.length > 0));
 
   // Lock region filter based on user role
   const getInitialRegion = useCallback(() => {
@@ -184,6 +188,7 @@ export default function DeliveryPage() {
 
   const openModal = async (order: Order) => {
     setSelectedOrder(order);
+    const plannedDate = order.deliveryDate ? new Date(order.deliveryDate) : new Date();
     
     // If this is a delivered order, load the delivery data
     // Check both order.deliveries (from pending orders) and order._deliveryData (from history)
@@ -195,113 +200,50 @@ export default function DeliveryPage() {
     }
     
     if (deliveryData) {
-      setForm({
-        deliveryDate: deliveryData.deliveryDate ? new Date(deliveryData.deliveryDate) : new Date(),
-        ongkirPlan: formatCurrency(deliveryData.ongkirPlan),
-        ongkirActual: formatCurrency(deliveryData.ongkirActual),
+    setForm({
+      deliveryDate: deliveryData.deliveryDate ? new Date(deliveryData.deliveryDate) : plannedDate,
+      ongkirPlan: formatCurrency(deliveryData.ongkirPlan),
+      ongkirActual: formatCurrency(deliveryData.ongkirActual),
+    });
+    
+    if (deliveryData.items && deliveryData.items.length > 0) {
+      const qtyMap: Record<number, number> = {};
+      deliveryData.items.forEach((item) => {
+        qtyMap[item.productId] = (qtyMap[item.productId] || 0) + 1;
       });
-      
-      if (deliveryData.items && deliveryData.items.length > 0) {
-        const deliveryItems = deliveryData.items.map(item => ({
-          productId: item.productId,
-          barcode: item.barcode,
-          product: item.product
-        }));
-        setScannedItems(deliveryItems);
-      } else {
-        setScannedItems([]);
-      }
+      setDeliveryQuantities(qtyMap);
+    } else {
+      const qtyMap: Record<number, number> = {};
+      order.items?.forEach((item) => {
+        qtyMap[item.productId] = item.quantity;
+      });
+      setDeliveryQuantities(qtyMap);
+    }
     } else {
       // New delivery
       setForm({
-        deliveryDate: new Date(),
-        ongkirPlan: "",
+        deliveryDate: plannedDate,
+        ongkirPlan: order.ongkirPlan ? formatCurrency(order.ongkirPlan) : "",
         ongkirActual: "",
       });
-      setScannedItems([]);
+      const qtyMap: Record<number, number> = {};
+      (order.items || []).forEach((item) => {
+        qtyMap[item.productId] = item.quantity;
+      });
+      setDeliveryQuantities(qtyMap);
     }
-    
-    setScanInput("");
+
     setError("");
     setIsModalOpen(true);
   };
 
-  const addScan = async () => {
-    const code = scanInput.trim().toUpperCase();
-    if (!code) { 
-      setError("Barcode tidak boleh kosong"); 
-      return; 
-    }
-    
-    if (!selectedOrder) {
-      setError("No order selected");
-      return;
-    }
-
-    // Check if barcode is already scanned
-    if (scannedItems.some((item) => item.barcode === code)) {
-      setError("Barcode sudah di-scan");
-      return;
-    }
-
-    try {
-      // Check if barcode exists in inventory and is READY
-      // Use search parameter to find by barcode
-      const res = await fetch(`/api/inventory/list?search=${encodeURIComponent(code)}&status=READY`);
-      const inventoryData = await res.json();
-      
-      if (!inventoryData || !inventoryData.items || !Array.isArray(inventoryData.items) || inventoryData.items.length === 0) {
-        setError("Barcode tidak ditemukan di inventory atau tidak tersedia");
-        return;
-      }
-
-      // Find exact barcode match
-      const inventoryItem = inventoryData.items.find((item: any) => item.barcode === code);
-      if (!inventoryItem || typeof inventoryItem !== 'object') {
-        setError("Barcode tidak ditemukan di inventory");
-        return;
-      }
-
-      if (inventoryItem.status !== "READY") {
-        setError("Item tidak tersedia (status: " + (inventoryItem.status || "unknown") + ")");
-        return;
-      }
-
-      // Get product ID from the inventory item
-      // We need to find the product ID by matching the product info
-      const orderItem = selectedOrder?.items?.find(item => {
-        // Match by product name or code since we don't have productId in inventory response
-        return item.product.name === inventoryItem.product?.name || 
-               item.product.code === inventoryItem.product?.code;
-      });
-
-      if (!orderItem) {
-        setError("Product ini tidak ada dalam order");
-        return;
-      }
-
-      // Check if we haven't exceeded the ordered quantity
-      const scannedCount = scannedItems.filter(item => item.productId === orderItem.productId).length;
-      if (scannedCount >= orderItem.quantity) {
-        setError(`Sudah mencapai batas quantity untuk product ini (${orderItem.quantity})`);
-        return;
-      }
-
-      setError("");
-      setScannedItems((prev) => [...prev, { 
-        productId: orderItem.productId,
-        barcode: code,
-        product: orderItem.product
-      }]);
-      setScanInput("");
-    } catch (err) {
-      console.error('Barcode validation error:', err);
-      setError("Error checking barcode: " + (err as Error).message);
-    }
-  };
-
-  const removeScan = (index: number) => {
-    setScannedItems((prev) => prev.filter((_, i) => i !== index));
+  const handleQuantityChange = (productId: number, rawValue: string, maxQuantity: number) => {
+    const parsed = Math.floor(Number(rawValue));
+    const safeValue = Math.min(Math.max(parsed || 0, 0), maxQuantity);
+    setDeliveryQuantities((prev) => ({
+      ...prev,
+      [productId]: safeValue,
+    }));
   };
 
   const handleCancelDelivery = async (deliveryId: number) => {
@@ -338,31 +280,30 @@ export default function DeliveryPage() {
 
     setError("");
     
-    if (scannedItems.length === 0) {
-      setError("Scan minimal 1 item terlebih dahulu");
+    const invalidProduct = selectedOrder.items?.find(
+      (item) => (deliveryQuantities[item.productId] ?? 0) > item.quantity,
+    );
+    if (invalidProduct) {
+      setError(`Jumlah ${invalidProduct.product.name} tidak boleh melebihi ${invalidProduct.quantity}`);
       return;
     }
 
-    // Validate Ongkir fields (only for WhatsApp outlet)
-    if (selectedOrder?.outlet?.toLowerCase() === "whatsapp") {
-      if (!form.ongkirPlan || form.ongkirPlan === "") {
-        setError("Ongkir (Plan) harus diisi");
-        return;
-      }
+    const payloadItems = Object.entries(deliveryQuantities)
+      .map(([productId, quantity]) => ({ productId: Number(productId), quantity }))
+      .filter((item) => item.quantity > 0);
 
+    if (payloadItems.length === 0) {
+      setError("Isi jumlah pengiriman minimal 1 produk");
+      return;
+    }
+
+    // Validate Ongkir fields (only for WhatsApp outlet) - ongkirPlan read-only from order
+    if (selectedOrder?.outlet?.toLowerCase() === "whatsapp") {
       if (!form.ongkirActual || form.ongkirActual === "") {
         setError("Ongkir (Actual) harus diisi");
         return;
       }
-
-      const ongkirPlanNum = parseInt(form.ongkirPlan.replace(/[^\d]/g, ""));
       const ongkirActualNum = parseInt(form.ongkirActual.replace(/[^\d]/g, ""));
-
-      if (isNaN(ongkirPlanNum) || ongkirPlanNum <= 0) {
-        setError("Ongkir (Plan) harus berupa angka yang valid");
-        return;
-      }
-
       if (isNaN(ongkirActualNum) || ongkirActualNum <= 0) {
         setError("Ongkir (Actual) harus berupa angka yang valid");
         return;
@@ -372,17 +313,12 @@ export default function DeliveryPage() {
     const payload: any = {
       orderId: selectedOrder?.id,
       deliveryDate: form.deliveryDate.toISOString(),
-      items: scannedItems.map(item => ({
-        productId: item.productId,
-        barcode: item.barcode
-      })),
+      items: payloadItems,
     };
 
-    // Only include ongkir fields for WhatsApp outlet
+    // Only include ongkir actual for WhatsApp outlet (plan comes from order)
     if (selectedOrder?.outlet?.toLowerCase() === "whatsapp") {
-      const ongkirPlanNum = parseInt(form.ongkirPlan.replace(/[^\d]/g, ""));
       const ongkirActualNum = parseInt(form.ongkirActual.replace(/[^\d]/g, ""));
-      payload.ongkirPlan = ongkirPlanNum;
       payload.ongkirActual = ongkirActualNum;
     }
 
@@ -392,32 +328,22 @@ export default function DeliveryPage() {
       headers: { "Content-Type": "application/json" }, 
       body: JSON.stringify(payload) 
     });
-    
+    const data = await res.json().catch(() => ({} as any));
+
     if (res.ok) {
+      if (Array.isArray(data?.refunds) && data.refunds.length > 0) {
+        const message = data.refunds
+          .map((r: any) => `${r.name || r.code || "-"}: ${r.quantity}`)
+          .join("\n");
+        alert(`Refund/Cancel:\n${message}`);
+      }
       setIsModalOpen(false);
       loadDeliveries();
       loadPendingOrders(); // Refresh pending orders
     } else {
-      const err = await res.json().catch(() => ({}));
-      setError(err.error || "Failed to create delivery");
+      setError(data?.error || "Failed to create delivery");
     }
     setIsSubmitting(false);
-  };
-
-  const getOrderSummary = () => {
-    if (!selectedOrder) return null;
-    
-    const orderItemCounts = new Map();
-    selectedOrder?.items?.forEach(item => {
-      orderItemCounts.set(item.productId, item.quantity);
-    });
-
-    const scannedItemCounts = new Map();
-    scannedItems.forEach(item => {
-      scannedItemCounts.set(item.productId, (scannedItemCounts.get(item.productId) || 0) + 1);
-    });
-
-    return { orderItemCounts, scannedItemCounts };
   };
 
   return (
@@ -646,11 +572,7 @@ export default function DeliveryPage() {
                       type="text"
                       placeholder="Rp 0"
                       value={form.ongkirPlan}
-                      onChange={(e) => {
-                        const value = e.target.value.replace(/[^\d]/g, "");
-                        const formatted = value ? `Rp ${parseInt(value).toLocaleString("id-ID")}` : "";
-                        setForm({ ...form, ongkirPlan: formatted });
-                      }}
+                      disabled
                       className="w-full"
                     />
                   </div>
@@ -703,80 +625,62 @@ export default function DeliveryPage() {
                 </div>
               )}
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <h3 className="font-medium mb-2">Order Items</h3>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="text-left">Product</TableHead>
-                        <TableHead className="text-center">Quantity</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {selectedOrder?.items?.map((item) => {
-                        const summary = getOrderSummary();
-                        const scannedCount = summary?.scannedItemCounts.get(item.productId) || 0;
-                        return (
-                          <TableRow key={item.id}>
-                            <TableCell>
-                              <div>
-                                <div className="font-medium">{item.product.name}</div>
-                                <div className="text-sm text-gray-500">{item.product.code}</div>
-                              </div>
-                            </TableCell>
-                            <TableCell className="text-center">
-                              <span className={scannedCount >= item.quantity ? "text-green-600" : "text-yellow-600"}>
-                                {scannedCount} / {item.quantity}
-                              </span>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </div>
-
-                <div>
-                  <h3 className="font-medium mb-2">
-                    {selectedOrder && (selectedOrder._deliveryData || (selectedOrder.deliveries && selectedOrder.deliveries.length > 0)) ? "Scanned Items" : "Scan Items"}
-                  </h3>
-                  <div className="space-y-2">
-                    {(!selectedOrder || (!selectedOrder._deliveryData && (!selectedOrder.deliveries || selectedOrder.deliveries.length === 0))) && (
-                      <div className="flex gap-2">
-                        <Input 
-                          placeholder="Scan barcode" 
-                          value={scanInput} 
-                          onChange={(e) => setScanInput(e.target.value)}
-                          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addScan(); } }}
-                        />
-                        <Button onClick={addScan} type="button">Add</Button>
-                      </div>
-                    )}
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="text-left">Barcode</TableHead>
-                          <TableHead className="text-left">Product</TableHead>
-                          <TableHead className="text-center">Actions</TableHead>
+              <div>
+                <h3 className="font-medium mb-2">Item Pengiriman</h3>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-left">Product</TableHead>
+                      <TableHead className="text-center">Ordered</TableHead>
+                      <TableHead className="text-center">Deliver Now</TableHead>
+                      <TableHead className="text-center">Refund/Cancel</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {selectedOrder?.items?.map((item) => {
+                      const delivered = deliveryQuantities[item.productId] ?? 0;
+                      const refundQty = Math.max(0, item.quantity - delivered);
+                      const readOnly =
+                        !!selectedOrder &&
+                        (selectedOrder._deliveryData ||
+                          (selectedOrder.deliveries && selectedOrder.deliveries.length > 0));
+                      return (
+                        <TableRow key={item.id}>
+                          <TableCell>
+                            <div>
+                              <div className="font-medium">{item.product.name}</div>
+                              <div className="text-sm text-gray-500">{item.product.code}</div>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-center font-medium">{item.quantity}</TableCell>
+                          <TableCell className="text-center">
+                            {readOnly ? (
+                              <span className="text-gray-700">{delivered}</span>
+                            ) : (
+                              <Input
+                                type="number"
+                                min={0}
+                                max={item.quantity}
+                                value={delivered}
+                                onChange={(e) => handleQuantityChange(item.productId, e.target.value, item.quantity)}
+                              />
+                            )}
+                          </TableCell>
+                          <TableCell className="text-center">
+                            {refundQty > 0 ? (
+                              <span className="text-amber-600 text-sm">Cancel {refundQty}</span>
+                            ) : (
+                              <span className="text-gray-500 text-sm">-</span>
+                            )}
+                          </TableCell>
                         </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {scannedItems.map((item, idx) => (
-                          <TableRow key={`${item.barcode}-${idx}`}>
-                            <TableCell>{item.barcode}</TableCell>
-                            <TableCell>{item.product.name}</TableCell>
-                            <TableCell className="text-center">
-                              {(!selectedOrder || (!selectedOrder._deliveryData && (!selectedOrder.deliveries || selectedOrder.deliveries.length === 0))) && (
-                                <Button variant="link" className="text-red-600 p-0 h-auto" onClick={() => removeScan(idx)}>Remove</Button>
-                              )}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                </div>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+                <p className="text-xs text-gray-500 mt-2">
+                  Jumlah yang tidak dikirim otomatis dianggap refund/cancel dan akan hilang dari order.
+                </p>
               </div>
             </div>
           )}
@@ -787,7 +691,7 @@ export default function DeliveryPage() {
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsModalOpen(false)} type="button" disabled={isSubmitting}>Close</Button>
-            {(!selectedOrder || (!selectedOrder._deliveryData && (!selectedOrder.deliveries || selectedOrder.deliveries.length === 0))) && (
+            {!hasExistingDelivery && (
               <Button className="disabled:opacity-50" onClick={submitDelivery} type="button" disabled={isSubmitting}>{isSubmitting ? "Submitting..." : "Submit Delivery"}</Button>
             )}
           </DialogFooter>

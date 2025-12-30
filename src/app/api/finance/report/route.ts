@@ -100,14 +100,16 @@ async function computeActualRevenue(startDate: Date, endDate: Date) {
       }
     }
 
+    const resolvedActual = order.actPayout != null ? order.actPayout : totalAmount;
+
     // Actual revenue per order mirrors logic in finance metrics/report sales
     const actual = isFree
       ? 0
       : (isCafe
         ? (order.actPayout ?? 0)
         : (isWhatsApp
-          ? ((order.actPayout || totalAmount || 0) - ongkirDifference)
-          : (order.actPayout || totalAmount || 0)));
+          ? (resolvedActual != null ? Math.max(0, resolvedActual - ongkirDifference) : 0)
+          : (resolvedActual ?? 0)));
 
     total += normalizeAmount(actual);
   }

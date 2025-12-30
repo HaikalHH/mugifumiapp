@@ -34,6 +34,7 @@ export async function GET(req: NextRequest) {
         select: {
           id: true,
           outlet: true,
+          customer: true,
           location: true,
           orderDate: true,
           discount: true,
@@ -59,10 +60,6 @@ export async function GET(req: NextRequest) {
       });
     }, 2, 'reports-sales-orders');
 
-    if (orders.length === 0) {
-      return NextResponse.json({ byOutlet: {}, byOutletRegion: {}, totalActual: 0, avgPotonganPct: null, sales: [] });
-    }
-
     const needsDiscount = (ot: string) => {
       const k = ot.toLowerCase();
       return k === "whatsapp" || k === "cafe" || k === "wholesale";
@@ -73,6 +70,7 @@ export async function GET(req: NextRequest) {
       const isCafe = order.outlet.toLowerCase() === "cafe";
       const isFree = order.outlet.toLowerCase() === "free";
       const isWhatsApp = order.outlet.toLowerCase() === "whatsapp";
+      const isB2BOutlet = order.outlet.toLowerCase() === "cafe" || order.outlet.toLowerCase() === "wholesale";
       
       // Calculate subtotal from order items
       const preDiscountSubtotal = orderItems.reduce((acc: number, item: any) => acc + (item.price * item.quantity), 0);
@@ -95,14 +93,20 @@ export async function GET(req: NextRequest) {
         }
       }
 
+      // Determine base actual before ongkir adjustment
+      const resolvedActual = order.actPayout != null
+        ? order.actPayout
+        : (order.totalAmount != null ? order.totalAmount : null);
+
       // For orders, actual received is actPayout if available, otherwise totalAmount
       // For Free outlet, set to 0
       // For Cafe outlet, if no actPayout, set to 0
-      // For WhatsApp, if no actPayout, use totalAmount minus ongkir difference
+      // For WhatsApp, subtract ongkir difference even if actPayout is filled
       const actual = isFree ? 0 : 
         (isCafe ? (order.actPayout ?? 0) : 
-        (isWhatsApp ? (order.actPayout || (order.totalAmount || 0) - ongkirDifference) :
-        (order.actPayout || order.totalAmount || null)));
+        (isWhatsApp
+          ? (resolvedActual != null ? Math.max(0, resolvedActual - ongkirDifference) : null)
+          : resolvedActual));
 
       // Potongan calculation for orders:
       // - Free: 100% (all is potongan since actual is 0)
@@ -126,6 +130,7 @@ export async function GET(req: NextRequest) {
         outlet: order.outlet,
         location: order.location,
         orderDate: order.orderDate,
+        customer: order.customer || null,
         // Keep fields for consumers
         subtotal: preDiscountSubtotal,
         discountPct: discountPct || 0,
@@ -135,15 +140,80 @@ export async function GET(req: NextRequest) {
         potonganPct,
         originalBeforeDiscount: preDiscountSubtotal,
         itemsCount: orderItems.length,
+        source: isB2BOutlet ? "B2B" : "Retail",
       };
     });
+
+    // B2B orders (Wholesale/Cafe) - pulled into same report
+    const whereB2B: any = {};
+    if (location) whereB2B.location = location;
+    if (outlet) whereB2B.outlet = outlet;
+    if (from || to) {
+      whereB2B.orderDate = {};
+      if (from) whereB2B.orderDate.gte = new Date(from);
+      if (to) whereB2B.orderDate.lte = new Date(to);
+    }
+
+    const b2bOrders = await withRetry(async () => {
+      return prisma.orderB2B.findMany({
+        where: whereB2B,
+        select: {
+          id: true,
+          outlet: true,
+          customer: true,
+          location: true,
+          orderDate: true,
+          discount: true,
+          totalAmount: true,
+          actPayout: true,
+          items: {
+            select: {
+              id: true,
+              productId: true,
+              quantity: true,
+              price: true,
+            },
+          },
+        },
+        orderBy: { id: "desc" },
+      });
+    }, 2, "reports-sales-b2b");
+
+    const perSaleB2B = b2bOrders.map((order) => {
+      const orderItems = order.items || [];
+      const preDiscountSubtotal = orderItems.reduce((acc: number, item: any) => acc + item.price * item.quantity, 0);
+      const discountPct = typeof order.discount === "number" ? order.discount : 0;
+      const discountedSubtotal = discountPct ? Math.round(preDiscountSubtotal * (1 - discountPct / 100)) : preDiscountSubtotal;
+      const resolvedActual = order.actPayout != null ? order.actPayout : order.totalAmount ?? discountedSubtotal;
+      const actual = resolvedActual ?? 0;
+      const potongan = preDiscountSubtotal - (actual ?? 0);
+      const potonganPct = preDiscountSubtotal > 0 ? Math.round((potongan / preDiscountSubtotal) * 1000) / 10 : null;
+      return {
+        id: order.id,
+        outlet: order.outlet,
+        customer: order.customer || null,
+        location: order.location,
+        orderDate: order.orderDate,
+        subtotal: preDiscountSubtotal,
+        discountPct: discountPct || 0,
+        total: order.totalAmount ?? discountedSubtotal,
+        actualReceived: actual,
+        potongan,
+        potonganPct,
+        originalBeforeDiscount: preDiscountSubtotal,
+        itemsCount: orderItems.length,
+        source: "B2B",
+      };
+    });
+
+    const combined = [...perSale, ...perSaleB2B];
 
     const byOutlet: Record<string, { count: number; actual: number; original: number; potongan: number }> = {};
     const byOutletRegionAgg: Record<string, { count: number; actual: number; original: number; potongan: number }> = {};
     let totalActual = 0;
     let totalOriginal = 0;
     let totalPotongan = 0;
-    for (const row of perSale) {
+    for (const row of combined) {
       byOutlet[row.outlet] ||= { count: 0, actual: 0, original: 0, potongan: 0 };
       byOutlet[row.outlet].count += 1;
       byOutlet[row.outlet].actual += row.actualReceived || 0;
@@ -183,8 +253,8 @@ export async function GET(req: NextRequest) {
       ])
     );
     
-    logRouteComplete('reports-sales', perSale.length);
-    return NextResponse.json({ byOutlet: out, byOutletRegion, totalActual, avgPotonganPct, sales: perSale });
+    logRouteComplete('reports-sales', combined.length);
+    return NextResponse.json({ byOutlet: out, byOutletRegion, totalActual, avgPotonganPct, sales: combined });
   } catch (error) {
     return NextResponse.json(
       createErrorResponse("build sales report", error), 
@@ -192,5 +262,3 @@ export async function GET(req: NextRequest) {
     );
   }
 }
-
-

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "../../../lib/prisma";
 import { withRetry, createErrorResponse, logRouteStart, logRouteComplete } from "../../../lib/db-utils";
+import { createSnapTransaction } from "../../../lib/midtrans";
 
 function normalizeOrderStatus(rawStatus?: string | null): "PAID" | "NOT PAID" {
   if (!rawStatus) return "PAID";
@@ -11,6 +12,48 @@ function normalizeOrderStatus(rawStatus?: string | null): "PAID" | "NOT PAID" {
   return "PAID";
 }
 
+const MIDTRANS_EXPIRY_MINUTES = Number(process.env.MIDTRANS_EXPIRY_MINUTES || 60);
+
+const ORDER_SELECT = {
+  id: true,
+  outlet: true,
+  customer: true,
+  status: true,
+  orderDate: true,
+  deliveryDate: true,
+  location: true,
+  discount: true,
+  totalAmount: true,
+  actPayout: true,
+  ongkirPlan: true,
+  paymentLink: true,
+  midtransOrderId: true,
+  midtransTransactionId: true,
+  createdAt: true,
+  deliveries: {
+    select: {
+      id: true,
+      status: true
+    }
+  },
+  items: {
+    select: {
+      id: true,
+      productId: true,
+      quantity: true,
+      price: true,
+      product: {
+        select: {
+          id: true,
+          code: true,
+          name: true,
+          price: true
+        }
+      }
+    }
+  }
+} as const;
+
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
@@ -19,10 +62,14 @@ export async function GET(req: NextRequest) {
     const from = searchParams.get("from");
     const to = searchParams.get("to");
     const search = searchParams.get("search");
+    const outletFilter = searchParams.get("outlet");
+    const excludeOutlet = searchParams.get("excludeOutlet");
     
     logRouteStart('orders-list', { page, pageSize, from, to, search });
 
     const where: any = {};
+    if (outletFilter) where.outlet = outletFilter;
+    if (excludeOutlet) where.outlet = { not: excludeOutlet };
     if (from || to) {
       where.orderDate = {};
       if (from) {
@@ -65,40 +112,7 @@ export async function GET(req: NextRequest) {
       return prisma.order.findMany({
         where,
         orderBy: { id: 'desc' },
-        select: {
-          id: true,
-          outlet: true,
-          customer: true,
-          status: true,
-          orderDate: true,
-          location: true,
-          discount: true,
-          totalAmount: true,
-          actPayout: true,
-          createdAt: true,
-          deliveries: {
-            select: {
-              id: true,
-              status: true
-            }
-          },
-          items: {
-            select: {
-              id: true,
-              productId: true,
-              quantity: true,
-              price: true,
-              product: {
-                select: {
-                  id: true,
-                  code: true,
-                  name: true,
-                  price: true
-                }
-              }
-            }
-          }
-        },
+        select: ORDER_SELECT,
         skip: (page - 1) * pageSize,
         take: pageSize,
       });
@@ -128,86 +142,100 @@ export async function POST(req: NextRequest) {
       customer,
       status,
       orderDate,
+      deliveryDate,
       location,
       discount,
       actPayout,
+      ongkirPlan,
       items, // Array of { productId, quantity }
     } = body as {
       outlet: string;
       customer?: string;
       status?: string;
       orderDate?: string;
+      deliveryDate?: string;
       location: string;
       discount?: number | null;
       actPayout?: number | null;
+      ongkirPlan?: number | null;
       items?: Array<{ productId: number; quantity: number }>;
     };
 
     if (!outlet || !location) {
       return NextResponse.json({ error: "outlet and location are required" }, { status: 400 });
     }
+    if (!orderDate) {
+      return NextResponse.json({ error: "orderDate is required" }, { status: 400 });
+    }
+    if (!deliveryDate) {
+      return NextResponse.json({ error: "deliveryDate is required" }, { status: 400 });
+    }
 
     if (!items || items.length === 0) {
       return NextResponse.json({ error: "at least one item is required" }, { status: 400 });
     }
 
+    const isWhatsAppOutlet = outlet.toLowerCase() === "whatsapp";
+    if (isWhatsAppOutlet) {
+      if (ongkirPlan === undefined || ongkirPlan === null || Number.isNaN(Number(ongkirPlan)) || Number(ongkirPlan) <= 0) {
+        return NextResponse.json({ error: "ongkirPlan is required for WhatsApp orders" }, { status: 400 });
+      }
+    }
+
+    // Resolve products up front so we can also reuse for Snap payload
+    const productIds = items.map((item) => item.productId);
+    const products = await withRetry(async () => {
+      return prisma.product.findMany({
+        where: { id: { in: productIds } },
+        select: { id: true, price: true, name: true, code: true },
+      });
+    }, 2, "orders-create-products");
+
+    const productMap = new Map(products.map((p) => [p.id, p]));
+
+    for (const item of items) {
+      if (!productMap.has(item.productId)) {
+        return NextResponse.json({ error: `Product with id ${item.productId} not found` }, { status: 400 });
+      }
+    }
+
+    const subtotal = items.reduce((acc, item) => {
+      const product = productMap.get(item.productId)!;
+      return acc + product.price * item.quantity;
+    }, 0);
+
+    const ongkirValue = isWhatsAppOutlet ? Math.round(Number(ongkirPlan)) : 0;
+    const subtotalAfterDiscount = discount
+      ? Math.round(subtotal * (1 - discount / 100))
+      : subtotal;
+    const totalAmount = subtotalAfterDiscount + ongkirValue;
+
+    const normalizedStatus = isWhatsAppOutlet ? "NOT PAID" : normalizeOrderStatus(status);
+    const normalizedActPayout = isWhatsAppOutlet ? null : actPayout || null;
+
     const created = await withRetry(async () => {
       return prisma.$transaction(async (tx) => {
-        // Get product details and calculate total
-        const productIds = items.map(item => item.productId);
-        const products = await tx.product.findMany({
-          where: { id: { in: productIds } },
-          select: { id: true, price: true }
-        });
-
-        const productMap = new Map(products.map(p => [p.id, p]));
-        
-        // Validate all products exist
-        for (const item of items) {
-          if (!productMap.has(item.productId)) {
-            throw new Error(`Product with id ${item.productId} not found`);
-          }
-        }
-
-        // Calculate total amount
-        const subtotal = items.reduce((acc, item) => {
-          const product = productMap.get(item.productId)!;
-          return acc + (product.price * item.quantity);
-        }, 0);
-
-        const totalAmount = discount 
-          ? Math.round(subtotal * (1 - discount / 100))
-          : subtotal;
-
-        // Create order
         const order = await tx.order.create({
           data: {
             outlet,
             customer: customer || null,
-            status: normalizeOrderStatus(status),
-            orderDate: orderDate ? new Date(orderDate) : new Date(),
+            status: normalizedStatus,
+            orderDate: new Date(orderDate),
+            deliveryDate: new Date(deliveryDate),
             location,
             discount: typeof discount === "number" && Number.isFinite(discount) ? discount : null,
-            totalAmount: totalAmount,
-            actPayout: actPayout || null,
+            totalAmount,
+            actPayout: normalizedActPayout,
+            ongkirPlan: isWhatsAppOutlet ? Math.round(Number(ongkirPlan)) : null,
+            paymentLink: null,
+            midtransOrderId: null,
+            midtransTransactionId: null,
           },
-          select: {
-            id: true,
-            outlet: true,
-            customer: true,
-            status: true,
-            orderDate: true,
-            location: true,
-            discount: true,
-            totalAmount: true,
-            actPayout: true,
-            createdAt: true
-          }
+          select: ORDER_SELECT,
         });
 
-        // Create order items
         const orderItems = await Promise.all(
-          items.map(item => 
+          items.map((item) =>
             tx.orderItem.create({
               data: {
                 orderId: order.id,
@@ -215,29 +243,74 @@ export async function POST(req: NextRequest) {
                 quantity: item.quantity,
                 price: productMap.get(item.productId)!.price,
               },
-              select: {
-                id: true,
-                productId: true,
-                quantity: true,
-                price: true,
-                product: {
-                  select: {
-                    id: true,
-                    code: true,
-                    name: true
-                  }
-                }
-              }
+              select: ORDER_SELECT.items.select,
             })
           )
         );
 
-        return { ...order, items: orderItems };
+        return { ...order, items: orderItems, deliveries: order.deliveries || [] };
       });
-    }, 2, 'orders-create');
+    }, 2, "orders-create");
+
+    let responsePayload = created;
+
+    if (isWhatsAppOutlet) {
+      const midtransOrderId = `WA-${created.id}-${Date.now()}`;
+      const snapItems = items.map((item) => {
+        const product = productMap.get(item.productId)!;
+        return {
+          id: product.id.toString(),
+          price: product.price,
+          quantity: item.quantity,
+          name: product.name || product.code || `Product ${product.id}`,
+        };
+      });
+      if (ongkirValue > 0) {
+        snapItems.push({
+          id: "ONGKIR",
+          price: ongkirValue,
+          quantity: 1,
+          name: "Ongkir",
+        });
+      }
+
+      try {
+        const snap = await createSnapTransaction({
+          orderId: midtransOrderId,
+          grossAmount: totalAmount,
+          customer: customer || "Customer",
+          items: snapItems,
+          expiryMinutes: MIDTRANS_EXPIRY_MINUTES,
+        });
+
+        const updated = await withRetry(async () => {
+          return prisma.order.update({
+            where: { id: created.id },
+            data: {
+              paymentLink: snap.redirectUrl,
+              midtransOrderId: snap.orderId,
+              midtransTransactionId: snap.token,
+            },
+            select: ORDER_SELECT,
+          });
+        }, 2, "orders-create-update-payment");
+
+        responsePayload = updated;
+      } catch (err) {
+        // Cleanup half-created order if Snap failed
+        await withRetry(async () => {
+          return prisma.$transaction(async (tx) => {
+            await tx.orderItem.deleteMany({ where: { orderId: created.id } });
+            await tx.delivery.deleteMany({ where: { orderId: created.id } });
+            await tx.order.delete({ where: { id: created.id } });
+          });
+        }, 1, "orders-create-cleanup");
+        throw err;
+      }
+    }
 
     logRouteComplete('orders-create', 1);
-    return NextResponse.json(created, { status: 201 });
+    return NextResponse.json(responsePayload, { status: 201 });
   } catch (e: any) {
     return NextResponse.json(
       createErrorResponse("create order", e), 
