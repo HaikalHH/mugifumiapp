@@ -25,6 +25,31 @@ const DEFAULT_ENABLED_PAYMENTS = [
   "gopay",
 ] as const;
 
+function resolveAppBaseUrl() {
+  const candidates = [
+    process.env.MIDTRANS_APP_BASE_URL,
+    process.env.NEXT_PUBLIC_APP_URL,
+    process.env.APP_BASE_URL,
+  ];
+  for (const value of candidates) {
+    if (value && value.trim()) {
+      return value.trim().replace(/\/+$/, "");
+    }
+  }
+  return "";
+}
+
+function resolveCallbackUrl(envValue?: string, fallbackPath?: string) {
+  if (envValue && envValue.trim()) {
+    return envValue.trim();
+  }
+  const appBase = resolveAppBaseUrl();
+  if (appBase && fallbackPath) {
+    return `${appBase}${fallbackPath}`;
+  }
+  return undefined;
+}
+
 function getMidtransConfig() {
   const serverKey = process.env.MIDTRANS_SERVER_KEY;
   if (!serverKey) {
@@ -33,9 +58,9 @@ function getMidtransConfig() {
 
   // Default to production as requested; allow override via env for testing
   const baseUrl = (process.env.MIDTRANS_BASE_URL || "https://app.midtrans.com").replace(/\/+$/, "");
-  const finishUrl = process.env.MIDTRANS_FINISH_URL;
-  const pendingUrl = process.env.MIDTRANS_PENDING_URL;
-  const errorUrl = process.env.MIDTRANS_ERROR_URL;
+  const finishUrl = resolveCallbackUrl(process.env.MIDTRANS_FINISH_URL, "/midtrans/finish");
+  const pendingUrl = resolveCallbackUrl(process.env.MIDTRANS_PENDING_URL, "/midtrans/pending");
+  const errorUrl = resolveCallbackUrl(process.env.MIDTRANS_ERROR_URL, "/midtrans/error");
   return { serverKey, baseUrl, finishUrl, pendingUrl, errorUrl };
 }
 

@@ -35,7 +35,8 @@ export default function AppShell({ children }: { children: ReactNode }) {
     [user]
   );
 
-  const hideShell = pathname === "/login" || pathname === "/forgot";
+  const isPublicRoute = pathname?.startsWith("/midtrans");
+  const hideShell = pathname === "/login" || pathname === "/forgot" || Boolean(isPublicRoute);
   const [ordersOpen, setOrdersOpen] = useState(() => pathname.startsWith("/orders"));
   const [reportOpen, setReportOpen] = useState(() => pathname.startsWith("/reports"));
   const [financeOpen, setFinanceOpen] = useState(() => pathname.startsWith("/finance"));

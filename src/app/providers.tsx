@@ -40,13 +40,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const value = useMemo(() => ({ user, setUser }), [user]);
 
+  const isPublicRoute = typeof pathname === "string" && pathname.startsWith("/midtrans");
+
   // Minimal guard: redirect to /login when not logged in and visiting app pages
   useEffect(() => {
     if (!hydrated) return; // wait for localStorage hydration
-    if (!user && pathname !== "/login" && pathname !== "/forgot") {
+    if (!user && pathname !== "/login" && pathname !== "/forgot" && !isPublicRoute) {
       router.replace("/login");
     }
-  }, [user, pathname, router, hydrated]);
+  }, [user, pathname, router, hydrated, isPublicRoute]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
