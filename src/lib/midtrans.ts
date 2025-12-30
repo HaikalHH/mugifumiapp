@@ -114,11 +114,14 @@ export async function createSnapTransaction(params: SnapCreateParams) {
       order_id: params.orderId,
       gross_amount: params.grossAmount,
     },
-    callbacks: finishUrl || pendingUrl || errorUrl ? {
-      ...(finishUrl ? { finish: finishUrl } : {}),
-      ...(pendingUrl ? { pending: pendingUrl } : {}),
-      ...(errorUrl ? { error: errorUrl } : {}),
-    } : undefined,
+    callbacks:
+      finishUrl || pendingUrl || errorUrl
+        ? {
+            ...(finishUrl ? { finish: finishUrl } : {}),
+            ...(pendingUrl ? { unfinish: pendingUrl } : {}),
+            ...(errorUrl ? { error: errorUrl } : {}),
+          }
+        : undefined,
     customer_details: {
       first_name: params.customer || "Customer",
     },
