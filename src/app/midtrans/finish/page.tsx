@@ -1,6 +1,5 @@
 import { redirect } from "next/navigation";
-import { prisma } from "../../../lib/prisma";
-import { formatMidtransOrderId } from "../../../lib/midtrans";
+import { formatMidtransOrderId, resolveMidtransGrossAmount } from "../../../lib/midtrans";
 import { MidtransResultCard } from "../_components/midtrans-result-card";
 
 type SearchParams = {
@@ -12,31 +11,6 @@ type SearchParams = {
 
 function toStringValue(value?: string | string[]) {
   return typeof value === "string" ? value : undefined;
-}
-
-async function resolveGrossAmount(orderId?: string, grossAmount?: string) {
-  if (grossAmount && Number.isFinite(Number(grossAmount))) {
-    return grossAmount;
-  }
-
-  if (!orderId) {
-    return grossAmount;
-  }
-
-  try {
-    const order = await prisma.order.findFirst({
-      where: { midtransOrderId: orderId },
-      select: { totalAmount: true },
-    });
-
-    if (order?.totalAmount != null) {
-      return String(order.totalAmount);
-    }
-  } catch (error) {
-    console.error("Failed to resolve midtrans finish gross amount:", error);
-  }
-
-  return grossAmount;
 }
 
 function buildQuery(orderId?: string, grossAmount?: string) {
@@ -51,7 +25,7 @@ export default async function MidtransFinishPage({ searchParams }: { searchParam
   const params = await searchParams;
   const orderId = toStringValue(params?.order_id);
   const grossAmountParam = toStringValue(params?.gross_amount);
-  const grossAmount = await resolveGrossAmount(orderId, grossAmountParam);
+  const grossAmount = await resolveMidtransGrossAmount(orderId, grossAmountParam);
   const displayOrderId = formatMidtransOrderId(orderId);
   const transactionStatus = toStringValue(params?.transaction_status)?.toLowerCase();
   const statusCode = toStringValue(params?.status_code);

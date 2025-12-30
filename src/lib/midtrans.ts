@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { prisma } from "./prisma";
 
 type SnapItem = {
   id: string;
@@ -196,4 +197,29 @@ export function formatMidtransOrderId(orderId?: string | null) {
     }
   }
   return trimmed;
+}
+
+export async function resolveMidtransGrossAmount(orderId?: string, grossAmount?: string) {
+  if (grossAmount && Number.isFinite(Number(grossAmount))) {
+    return grossAmount;
+  }
+
+  if (!orderId) {
+    return grossAmount;
+  }
+
+  try {
+    const order = await prisma.order.findFirst({
+      where: { midtransOrderId: orderId },
+      select: { totalAmount: true },
+    });
+
+    if (order?.totalAmount != null) {
+      return String(order.totalAmount);
+    }
+  } catch (error) {
+    console.error("Failed to resolve Midtrans gross amount:", error);
+  }
+
+  return grossAmount;
 }

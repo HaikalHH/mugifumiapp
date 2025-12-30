@@ -1,4 +1,4 @@
-import { formatMidtransOrderId } from "../../../lib/midtrans";
+import { formatMidtransOrderId, resolveMidtransGrossAmount } from "../../../lib/midtrans";
 import { MidtransResultCard } from "../_components/midtrans-result-card";
 
 type SearchParams = {
@@ -11,7 +11,8 @@ const toStringValue = (value?: string | string[]) => (typeof value === "string" 
 export default async function MidtransPendingPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const params = await searchParams;
   const orderId = toStringValue(params?.order_id);
-  const grossAmount = toStringValue(params?.gross_amount);
+  const grossAmountParam = toStringValue(params?.gross_amount);
+  const grossAmount = await resolveMidtransGrossAmount(orderId, grossAmountParam);
   const displayOrderId = formatMidtransOrderId(orderId);
   const whatsappMessage = `Halo Kak, saya belum menyelesaikan pembayaran untuk order ${
     displayOrderId ? `#${displayOrderId}` : ""
