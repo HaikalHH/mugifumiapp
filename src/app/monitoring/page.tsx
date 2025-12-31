@@ -246,7 +246,7 @@ export default function MonitoringPage() {
           >
             {isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
           </Button>
-          <Button onClick={loadOrders} disabled={loading}>
+          <Button onClick={() => loadOrders()} disabled={loading}>
             {loading ? "Loading..." : "Refresh"}
           </Button>
         </div>
