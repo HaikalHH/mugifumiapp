@@ -182,8 +182,23 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    const normalizedItemsMap = new Map<number, { productId: number; quantity: number }>();
+    for (const item of items) {
+      const qty = Number(item.quantity);
+      if (!Number.isFinite(qty) || qty <= 0) {
+        return NextResponse.json({ error: "each item quantity must be a positive number" }, { status: 400 });
+      }
+      const prev = normalizedItemsMap.get(item.productId);
+      if (prev) {
+        prev.quantity += qty;
+      } else {
+        normalizedItemsMap.set(item.productId, { productId: item.productId, quantity: qty });
+      }
+    }
+    const normalizedItems = Array.from(normalizedItemsMap.values());
+
     // Resolve products up front so we can also reuse for Snap payload
-    const productIds = items.map((item) => item.productId);
+    const productIds = normalizedItems.map((item) => item.productId);
     const products = await withRetry(async () => {
       return prisma.product.findMany({
         where: { id: { in: productIds } },
@@ -193,13 +208,13 @@ export async function POST(req: NextRequest) {
 
     const productMap = new Map(products.map((p) => [p.id, p]));
 
-    for (const item of items) {
+    for (const item of normalizedItems) {
       if (!productMap.has(item.productId)) {
         return NextResponse.json({ error: `Product with id ${item.productId} not found` }, { status: 400 });
       }
     }
 
-    const subtotal = items.reduce((acc, item) => {
+    const subtotal = normalizedItems.reduce((acc, item) => {
       const product = productMap.get(item.productId)!;
       return acc + product.price * item.quantity;
     }, 0);
@@ -235,7 +250,7 @@ export async function POST(req: NextRequest) {
         });
 
         const orderItems = await Promise.all(
-          items.map((item) =>
+          normalizedItems.map((item) =>
             tx.orderItem.create({
               data: {
                 orderId: order.id,
@@ -256,7 +271,7 @@ export async function POST(req: NextRequest) {
 
     if (isWhatsAppOutlet) {
       const midtransOrderId = `WA-${created.id}-${Date.now()}`;
-      const snapItems = items.map((item) => {
+      const snapItems = normalizedItems.map((item) => {
         const product = productMap.get(item.productId)!;
         return {
           id: product.id.toString(),
