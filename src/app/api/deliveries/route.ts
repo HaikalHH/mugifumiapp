@@ -215,9 +215,9 @@ export async function POST(req: NextRequest) {
         const refunds: Array<{ productId: number; name: string; code: string; quantity: number }> = [];
         let refundAmount = 0;
 
-        for (const [productId, quantity] of requestedMap.entries()) {
+        for (const [productId, requestedQuantity] of requestedMap.entries()) {
           const orderInfo = orderItemMap.get(productId)!;
-          if (quantity > orderInfo.qty) {
+          if (requestedQuantity > orderInfo.qty) {
             throw new Error(
               `Quantity for product ${orderInfo.product.code || productId} exceeds order quantity (${orderInfo.qty})`,
             );
@@ -225,10 +225,11 @@ export async function POST(req: NextRequest) {
           const code = (orderInfo.product.code || "").toUpperCase();
           const isBox = code.startsWith("BOX-");
           const price = orderInfo.product.price || 0;
+          let fulfilledQuantity = requestedQuantity;
 
           if (isBox) {
-            if (quantity > 0) {
-              boxItems.push({ productId, code, price, quantity });
+            if (fulfilledQuantity > 0) {
+              boxItems.push({ productId, code, price, quantity: fulfilledQuantity });
             }
           } else {
             const inventory = await tx.inventory.findMany({
@@ -242,14 +243,12 @@ export async function POST(req: NextRequest) {
                 barcode: true,
               },
               orderBy: { id: "asc" },
-              take: quantity,
+              take: requestedQuantity,
             });
 
-            if (inventory.length < quantity) {
-              throw new Error(`Stok ${code || productId} di ${order.location} tidak mencukupi`);
-            }
-
-            const ids = inventory.map((inv) => inv.id);
+            fulfilledQuantity = Math.min(requestedQuantity, inventory.length);
+            const usableItems = inventory.slice(0, fulfilledQuantity);
+            const ids = usableItems.map((inv) => inv.id);
             if (ids.length > 0) {
               await tx.inventory.updateMany({
                 where: { id: { in: ids } },
@@ -257,12 +256,12 @@ export async function POST(req: NextRequest) {
               });
             }
 
-            for (const inv of inventory) {
+            for (const inv of usableItems) {
               inventoryUsages.push({ productId, barcode: inv.barcode, price });
             }
           }
 
-          const diff = orderInfo.qty - quantity;
+          const diff = orderInfo.qty - fulfilledQuantity;
           if (diff > 0) {
             refunds.push({
               productId,
@@ -271,13 +270,13 @@ export async function POST(req: NextRequest) {
               quantity: diff,
             });
             refundAmount += diff * orderInfo.price;
-            if (quantity === 0) {
+            if (fulfilledQuantity === 0) {
               orderItemUpdates.push(tx.orderItem.delete({ where: { id: orderInfo.id } }));
             } else {
               orderItemUpdates.push(
                 tx.orderItem.update({
                   where: { id: orderInfo.id },
-                  data: { quantity },
+                  data: { quantity: fulfilledQuantity },
                 }),
               );
             }
