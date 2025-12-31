@@ -66,8 +66,8 @@ export default function ReportsSalesPage() {
   const pagedB2BRows = b2bRows.slice((b2bPage - 1) * B2B_PAGE_SIZE, b2bPage * B2B_PAGE_SIZE);
 
   const aggregates = (() => {
-    const byOutlet: Record<string, { count: number; actual: number; original: number; potongan: number }> = {};
-    const byOutletRegion: Record<string, { count: number; actual: number; original: number; potongan: number }> = {};
+    const byOutlet: Record<string, { count: number; actual: number; original: number; potongan: number; midtransFee: number }> = {};
+    const byOutletRegion: Record<string, { count: number; actual: number; original: number; potongan: number; midtransFee: number }> = {};
     let totalActual = 0;
     let totalOriginal = 0;
     let totalPotongan = 0;
@@ -87,24 +87,44 @@ export default function ReportsSalesPage() {
       const actual = row.actualReceived || 0;
       const original = row.originalBeforeDiscount || 0;
       const pot = row.potongan || 0;
+      const fee = row.midtransFee || 0;
 
-      byOutlet[row.outlet] ||= { count: 0, actual: 0, original: 0, potongan: 0 };
+      byOutlet[row.outlet] ||= { count: 0, actual: 0, original: 0, potongan: 0, midtransFee: 0 };
       byOutlet[row.outlet].count += 1;
       byOutlet[row.outlet].actual += actual;
       byOutlet[row.outlet].original += original;
       byOutlet[row.outlet].potongan += pot;
+      byOutlet[row.outlet].midtransFee += fee;
 
       const regionKey = `${row.outlet} ${row.location || ""}`.trim();
-      byOutletRegion[regionKey] ||= { count: 0, actual: 0, original: 0, potongan: 0 };
+      byOutletRegion[regionKey] ||= { count: 0, actual: 0, original: 0, potongan: 0, midtransFee: 0 };
       byOutletRegion[regionKey].count += 1;
       byOutletRegion[regionKey].actual += actual;
       byOutletRegion[regionKey].original += original;
       byOutletRegion[regionKey].potongan += pot;
+      byOutletRegion[regionKey].midtransFee += fee;
     }
 
     const avgPotonganPct = totalOriginal > 0 ? Math.round(((totalPotongan / totalOriginal) * 100) * 10) / 10 : null;
+    const finalRegions = Object.fromEntries(
+      Object.entries(byOutletRegion).map(([key, value]) => {
+        const potonganPct = value.original > 0 ? Math.round(((value.potongan / value.original) * 100) * 10) / 10 : null;
+        const gross = value.actual + value.midtransFee;
+        const feePct = gross > 0 ? Math.round(((value.midtransFee / gross) * 1000)) / 10 : null;
+        return [
+          key,
+          {
+            count: value.count,
+            actual: value.actual,
+            potonganPct,
+            midtransFee: value.midtransFee,
+            midtransFeePct: feePct,
+          },
+        ];
+      })
+    );
 
-    return { byOutlet, byOutletRegion, totalActual, avgPotonganPct, transactions: filteredSales.length, retailRows };
+    return { byOutlet, byOutletRegion: finalRegions, totalActual, avgPotonganPct, transactions: filteredSales.length, retailRows };
   })();
 
   return (
@@ -229,22 +249,26 @@ export default function ReportsSalesPage() {
             <TableHeader>
               <TableRow>
                 <TableHead className="text-left">Outlet + Region</TableHead>
-                <TableHead className="text-right">Transactions</TableHead>
-                <TableHead className="text-right">Actual (Rp)</TableHead>
-                <TableHead className="text-right">Potongan %</TableHead>
+              <TableHead className="text-right">Transactions</TableHead>
+              <TableHead className="text-right">Actual (Rp)</TableHead>
+              <TableHead className="text-right">Potongan %</TableHead>
+              <TableHead className="text-right">Midtrans Fee (Rp)</TableHead>
+              <TableHead className="text-right">Fee %</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {Object.entries(aggregates.byOutletRegion).map(([k, v]: any) => (
+              <TableRow key={k}>
+                <TableCell>{k}</TableCell>
+                <TableCell className="text-right">{v.count}</TableCell>
+                <TableCell className="text-right">{(v.actual ?? 0).toLocaleString("id-ID")}</TableCell>
+                <TableCell className="text-right">{v.potonganPct != null ? `${v.potonganPct}%` : "-"}</TableCell>
+                <TableCell className="text-right">{(v.midtransFee ?? 0).toLocaleString("id-ID")}</TableCell>
+                <TableCell className="text-right">{v.midtransFeePct != null ? `${v.midtransFeePct}%` : "-"}</TableCell>
               </TableRow>
-            </TableHeader>
-            <TableBody>
-              {Object.entries(aggregates.byOutletRegion).map(([k, v]: any) => (
-                <TableRow key={k}>
-                  <TableCell>{k}</TableCell>
-                  <TableCell className="text-right">{v.count}</TableCell>
-                  <TableCell className="text-right">{(v.actual ?? 0).toLocaleString("id-ID")}</TableCell>
-                  <TableCell className="text-right">{v.potonganPct != null ? `${v.potonganPct}%` : "-"}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+            ))}
+          </TableBody>
+        </Table>
         ) : (
           <div className="text-sm text-muted-foreground">Tidak ada data.</div>
         )}

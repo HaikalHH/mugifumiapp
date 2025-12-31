@@ -20,6 +20,7 @@ const ORDER_SELECT = {
   paymentLink: true,
   midtransOrderId: true,
   midtransTransactionId: true,
+  midtransFee: true,
   createdAt: true,
   deliveries: {
     select: {
@@ -365,6 +366,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           paymentLink: null,
           midtransOrderId: null,
           midtransTransactionId: null,
+          midtransFee: null,
         },
         select: ORDER_SELECT,
       });

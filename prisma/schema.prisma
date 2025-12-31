@@ -138,6 +138,7 @@ model Order {
   paymentLink    String?
   midtransOrderId String?
   midtransTransactionId String?
+  midtransFee    Int?
   items          OrderItem[]
   deliveries     Delivery[]
 }

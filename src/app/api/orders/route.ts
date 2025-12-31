@@ -29,6 +29,7 @@ const ORDER_SELECT = {
   paymentLink: true,
   midtransOrderId: true,
   midtransTransactionId: true,
+  midtransFee: true,
   createdAt: true,
   deliveries: {
     select: {

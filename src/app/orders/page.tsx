@@ -26,6 +26,7 @@ type Order = {
   paymentLink?: string | null;
   midtransOrderId?: string | null;
   midtransTransactionId?: string | null;
+  midtransFee?: number | null;
   items: Array<{
     id: number;
     productId: number;

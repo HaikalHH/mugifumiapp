@@ -78,6 +78,8 @@ export async function POST(req: NextRequest) {
     const actPayoutAmount =
       (netFromPayload && netFromPayload > 0 ? netFromPayload : null) ??
       (netPayout > 0 ? netPayout : (paidAmount > 0 ? paidAmount : order.totalAmount));
+    const midtransFeeAmount =
+      actPayoutAmount != null && paidAmount > 0 ? Math.max(0, paidAmount - actPayoutAmount) : null;
 
     if (statusLower === "capture" || statusLower === "settlement") {
       await withRetry(async () => {
@@ -87,6 +89,7 @@ export async function POST(req: NextRequest) {
             status: "PAID",
             midtransTransactionId: transaction_id ? String(transaction_id) : null,
             actPayout: actPayoutAmount,
+            midtransFee: midtransFeeAmount,
           },
         });
       }, 2, "midtrans-callback-paid");

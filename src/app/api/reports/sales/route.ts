@@ -40,6 +40,7 @@ export async function GET(req: NextRequest) {
           discount: true,
           totalAmount: true,
           actPayout: true,
+          midtransFee: true,
           items: {
             select: {
               id: true,
@@ -71,6 +72,7 @@ export async function GET(req: NextRequest) {
       const isFree = order.outlet.toLowerCase() === "free";
       const isWhatsApp = order.outlet.toLowerCase() === "whatsapp";
       const isB2BOutlet = order.outlet.toLowerCase() === "cafe" || order.outlet.toLowerCase() === "wholesale";
+      const recordedMidtransFee = order.midtransFee ?? 0;
       
       // Calculate subtotal from order items
       const preDiscountSubtotal = orderItems.reduce((acc: number, item: any) => acc + (item.price * item.quantity), 0);
@@ -141,6 +143,7 @@ export async function GET(req: NextRequest) {
         originalBeforeDiscount: preDiscountSubtotal,
         itemsCount: orderItems.length,
         source: isB2BOutlet ? "B2B" : "Retail",
+        midtransFee: isWhatsApp ? recordedMidtransFee : 0,
       };
     });
 
@@ -203,29 +206,33 @@ export async function GET(req: NextRequest) {
         originalBeforeDiscount: preDiscountSubtotal,
         itemsCount: orderItems.length,
         source: "B2B",
+        midtransFee: 0,
       };
     });
 
     const combined = [...perSale, ...perSaleB2B];
 
-    const byOutlet: Record<string, { count: number; actual: number; original: number; potongan: number }> = {};
-    const byOutletRegionAgg: Record<string, { count: number; actual: number; original: number; potongan: number }> = {};
+    const byOutlet: Record<string, { count: number; actual: number; original: number; potongan: number; midtransFee: number }> = {};
+    const byOutletRegionAgg: Record<string, { count: number; actual: number; original: number; potongan: number; midtransFee: number }> = {};
     let totalActual = 0;
     let totalOriginal = 0;
     let totalPotongan = 0;
     for (const row of combined) {
-      byOutlet[row.outlet] ||= { count: 0, actual: 0, original: 0, potongan: 0 };
+      const fee = row.midtransFee || 0;
+      byOutlet[row.outlet] ||= { count: 0, actual: 0, original: 0, potongan: 0, midtransFee: 0 };
       byOutlet[row.outlet].count += 1;
       byOutlet[row.outlet].actual += row.actualReceived || 0;
       byOutlet[row.outlet].original += row.originalBeforeDiscount || 0;
       byOutlet[row.outlet].potongan += row.potongan || 0;
+      byOutlet[row.outlet].midtransFee += fee;
 
       const regionKey = `${row.outlet} ${row.location}`.trim();
-      byOutletRegionAgg[regionKey] ||= { count: 0, actual: 0, original: 0, potongan: 0 };
+      byOutletRegionAgg[regionKey] ||= { count: 0, actual: 0, original: 0, potongan: 0, midtransFee: 0 };
       byOutletRegionAgg[regionKey].count += 1;
       byOutletRegionAgg[regionKey].actual += row.actualReceived || 0;
       byOutletRegionAgg[regionKey].original += row.originalBeforeDiscount || 0;
       byOutletRegionAgg[regionKey].potongan += row.potongan || 0;
+      byOutletRegionAgg[regionKey].midtransFee += fee;
       totalActual += row.actualReceived || 0;
       totalOriginal += row.originalBeforeDiscount || 0;
       totalPotongan += row.potongan || 0;
@@ -237,6 +244,9 @@ export async function GET(req: NextRequest) {
           count: v.count,
           actual: v.actual,
           potonganPct: v.original > 0 ? Math.round(((v.potongan / v.original) * 100) * 10) / 10 : null,
+          midtransFee: v.midtransFee,
+          midtransFeePct:
+            v.actual + v.midtransFee > 0 ? Math.round(((v.midtransFee / (v.actual + v.midtransFee)) * 100) * 10) / 10 : null,
         },
       ])
     );
