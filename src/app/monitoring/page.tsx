@@ -40,7 +40,6 @@ type MonitoringNotification = {
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const AUTO_REFRESH_MS = 30_000;
 const MAX_NOTIFICATIONS = 3;
-type WebAudioWindow = Window & typeof globalThis & { webkitAudioContext?: typeof AudioContext };
 
 function calculateDaysLeft(dateString?: string | null) {
   if (!dateString) return null;
@@ -92,7 +91,7 @@ export default function MonitoringPage() {
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
   const prevOrdersRef = useRef<Map<number, MonitoringOrder>>(new Map());
   const hasInitializedRef = useRef(false);
-  const audioContextRef = useRef<AudioContext | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   const [soundEnabled, setSoundEnabled] = useState(false);
 
   useEffect(() => {
@@ -104,47 +103,36 @@ export default function MonitoringPage() {
   const playNotificationSound = useCallback(() => {
     if (!soundEnabled) return;
     if (typeof window === "undefined") return;
-    const ctx = audioContextRef.current;
-    if (!ctx) return;
-
-    const triggerTone = () => {
-      const oscillator = ctx.createOscillator();
-      const gainNode = ctx.createGain();
-      oscillator.type = "triangle";
-      oscillator.frequency.value = 880;
-      gainNode.gain.value = 0.15;
-      oscillator.connect(gainNode);
-      gainNode.connect(ctx.destination);
-      const now = ctx.currentTime;
-      oscillator.start(now);
-      gainNode.gain.exponentialRampToValueAtTime(0.0001, now + 0.2);
-      oscillator.stop(now + 0.25);
-    };
-
-    if (ctx.state === "suspended") {
-      ctx.resume().then(triggerTone).catch(() => {});
-    } else {
-      triggerTone();
-    }
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.currentTime = 0;
+    audio.play().catch(() => {});
   }, [soundEnabled]);
 
   const handleSoundToggle = useCallback(() => {
     if (typeof window === "undefined") return;
-    const AudioCtor = window.AudioContext || (window as WebAudioWindow).webkitAudioContext;
-    if (!AudioCtor) {
-      console.warn("AudioContext not supported in this browser");
-      return;
-    }
     if (soundEnabled) {
       setSoundEnabled(false);
-      audioContextRef.current?.suspend().catch(() => {});
       return;
     }
-    if (!audioContextRef.current) {
-      audioContextRef.current = new AudioCtor();
+    if (!audioRef.current) {
+      const audio = new Audio("/sound/notification.mp3");
+      audio.volume = 0.4;
+      audioRef.current = audio;
     }
-    audioContextRef.current.resume().catch(() => {});
-    setSoundEnabled(true);
+    audioRef.current
+      ?.play()
+      .then(() => {
+        if (audioRef.current) {
+          audioRef.current.pause();
+          audioRef.current.currentTime = 0;
+        }
+        setSoundEnabled(true);
+      })
+      .catch(() => {
+        // Autoplay might be blocked; keep enabled so next notification tries again.
+        setSoundEnabled(true);
+      });
   }, [soundEnabled]);
 
   const recordOrderActivity = useCallback(
