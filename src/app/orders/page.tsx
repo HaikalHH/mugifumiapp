@@ -120,6 +120,7 @@ export default function OrdersPage() {
   const [selectedItems, setSelectedItems] = useState<Array<{ productId: number; quantity: number; product: Product }>>([]);
   const [error, setError] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [manualProcessingId, setManualProcessingId] = useState<number | null>(null);
 
   // Product selection state
   const [products, setProducts] = useState<Product[]>([]);
@@ -425,6 +426,29 @@ export default function OrdersPage() {
     }
   };
 
+  const handleManualPaid = async (orderId: number) => {
+    if (!confirm("Tandai order ini sebagai sudah dibayar manual?")) {
+      return;
+    }
+    setManualProcessingId(orderId);
+    try {
+      const res = await fetch(`/api/orders/${orderId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "manual-paid" }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error((data && data.error) || "Gagal update status");
+      }
+      loadOrders();
+    } catch (err) {
+      alert(`Error: ${(err as Error).message}`);
+    } finally {
+      setManualProcessingId(null);
+    }
+  };
+
   const copyPaymentLink = async (url: string) => {
     if (!url) return;
     try {
@@ -535,7 +559,7 @@ export default function OrdersPage() {
     const data = await res.json().catch(() => null);
 
     if (res.ok) {
-      if (!editingOrderId && currentOutlet.toLowerCase() === "whatsapp" && data?.paymentLink) {
+      if (currentOutlet.toLowerCase() === "whatsapp" && data?.paymentLink) {
         setLastPaymentLink({
           url: data.paymentLink,
           orderId: data.id,
@@ -1053,6 +1077,16 @@ export default function OrdersPage() {
                         onClick={() => copyPaymentLink(order.paymentLink!)}
                       >
                         Copy Link
+                      </Button>
+                    )}
+                    {order.outlet.toLowerCase() === "whatsapp" && normalizeOrderStatus(order.status) === "NOT PAID" && (
+                      <Button
+                        variant="link"
+                        className="p-0 h-auto text-emerald-700"
+                        onClick={() => handleManualPaid(order.id)}
+                        disabled={manualProcessingId === order.id}
+                      >
+                        {manualProcessingId === order.id ? "Marking..." : "Manual Paid"}
                       </Button>
                     )}
                     {user?.role === "Admin" && (

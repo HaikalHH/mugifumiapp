@@ -1,6 +1,49 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "../../../../lib/prisma";
 import { withRetry, createErrorResponse, logRouteStart, logRouteComplete } from "../../../../lib/db-utils";
+import { createSnapTransaction } from "../../../../lib/midtrans";
+
+const MIDTRANS_EXPIRY_MINUTES = Number(process.env.MIDTRANS_EXPIRY_MINUTES || 60);
+
+const ORDER_SELECT = {
+  id: true,
+  outlet: true,
+  customer: true,
+  status: true,
+  orderDate: true,
+  deliveryDate: true,
+  location: true,
+  discount: true,
+  totalAmount: true,
+  actPayout: true,
+  ongkirPlan: true,
+  paymentLink: true,
+  midtransOrderId: true,
+  midtransTransactionId: true,
+  createdAt: true,
+  deliveries: {
+    select: {
+      id: true,
+      status: true,
+    },
+  },
+  items: {
+    select: {
+      id: true,
+      productId: true,
+      quantity: true,
+      price: true,
+      product: {
+        select: {
+          id: true,
+          code: true,
+          name: true,
+          price: true,
+        },
+      },
+    },
+  },
+} as const;
 
 function normalizeOrderStatus(rawStatus?: string | null): "PAID" | "NOT PAID" {
   if (!rawStatus) return "PAID";
@@ -60,12 +103,12 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
             select: {
               productId: true,
               quantity: true,
-              price: true
-            }
-          }
-        }
+              price: true,
+            },
+          },
+        },
       });
-    }, 2, 'order-update-find');
+    }, 2, "order-update-find");
 
     if (!existingOrder) {
       return NextResponse.json({ error: "Order not found" }, { status: 404 });
@@ -118,6 +161,22 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       : subtotal;
     const totalAmount = afterDiscount + ongkirValue;
 
+    let shouldRegenerateSnap = false;
+    if (isWhatsAppOutlet && !isDelivered) {
+      const existingSignature = existingOrder.items
+        .map((it) => `${it.productId}:${it.quantity}`)
+        .sort()
+        .join("|");
+      const nextSignature = resolvedItems
+        .map((it) => `${it.productId}:${it.quantity}`)
+        .sort()
+        .join("|");
+      const itemsChanged = existingSignature !== nextSignature;
+      const totalChanged = Math.round(existingOrder.totalAmount ?? 0) !== Math.round(totalAmount);
+      const ongkirChanged = Math.round(existingOrder.ongkirPlan ?? 0) !== Math.round(ongkirValue);
+      shouldRegenerateSnap = itemsChanged || totalChanged || ongkirChanged;
+    }
+
     // Use transaction to update order and items
     const updatedOrder = await withRetry(async () => {
       return prisma.$transaction(async (tx) => {
@@ -129,7 +188,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         }
 
         // Update order
-        const order = await tx.order.update({
+        await tx.order.update({
           where: { id: orderId },
           data: {
             outlet,
@@ -143,45 +202,6 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
             actPayout: actPayout || null,
             ongkirPlan: isWhatsAppOutlet ? ongkirValue : null,
           },
-          select: {
-            id: true,
-            outlet: true,
-            customer: true,
-            status: true,
-            orderDate: true,
-            deliveryDate: true,
-            location: true,
-            discount: true,
-            totalAmount: true,
-            actPayout: true,
-            ongkirPlan: true,
-            paymentLink: true,
-            midtransOrderId: true,
-            midtransTransactionId: true,
-            createdAt: true,
-            deliveries: {
-              select: {
-                id: true,
-                status: true
-              }
-            },
-            items: {
-              select: {
-                id: true,
-                productId: true,
-                quantity: true,
-                price: true,
-                product: {
-                  select: {
-                    id: true,
-                    code: true,
-                    name: true,
-                    price: true
-                  }
-                }
-              }
-            }
-          }
         });
 
         if (!isDelivered) {
@@ -192,18 +212,69 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
                 orderId: orderId,
                 productId: item.productId,
                 quantity: item.quantity,
-                price: item.price
+                price: item.price,
               }
             });
           }
         }
 
-        return order;
+        return tx.order.findUnique({
+          where: { id: orderId },
+          select: ORDER_SELECT,
+        });
       });
     }, 2, 'order-update-transaction');
 
+    let finalOrder = updatedOrder;
+
+    if (shouldRegenerateSnap) {
+      try {
+        const snapItems = resolvedItems.map((item) => {
+          const matching = finalOrder.items.find((it) => it.productId === item.productId);
+          const product = matching?.product;
+          return {
+            id: (product?.id || item.productId).toString(),
+            price: item.price,
+            quantity: item.quantity,
+            name: product?.name || product?.code || `Product ${item.productId}`,
+          };
+        });
+        if (ongkirValue > 0) {
+          snapItems.push({
+            id: "ONGKIR",
+            price: ongkirValue,
+            quantity: 1,
+            name: "Ongkir",
+          });
+        }
+        const snap = await createSnapTransaction({
+          orderId: `WA-${orderId}-${Date.now()}`,
+          grossAmount: totalAmount,
+          customer: customer || existingOrder.customer || "Customer",
+          items: snapItems,
+          expiryMinutes: MIDTRANS_EXPIRY_MINUTES,
+        });
+
+        finalOrder = await withRetry(async () => {
+          return prisma.order.update({
+            where: { id: orderId },
+            data: {
+              paymentLink: snap.redirectUrl,
+              midtransOrderId: snap.orderId,
+              midtransTransactionId: snap.token,
+            },
+            select: ORDER_SELECT,
+          });
+        }, 2, "order-update-attach-payment");
+      } catch (error) {
+        return NextResponse.json(createErrorResponse("regenerate payment link", error), {
+          status: 500,
+        });
+      }
+    }
+
     logRouteComplete('order-update');
-    return NextResponse.json(updatedOrder);
+    return NextResponse.json(finalOrder);
   } catch (error) {
     return NextResponse.json(
       createErrorResponse("update order", error), 
@@ -263,5 +334,40 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
       createErrorResponse("delete order", error), 
       { status: 500 }
     );
+  }
+}
+
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    logRouteStart("order-patch");
+    const { id } = await params;
+    const orderId = parseInt(id);
+    if (isNaN(orderId)) {
+      return NextResponse.json({ error: "Invalid order ID" }, { status: 400 });
+    }
+    const payload = await req.json().catch(() => ({}));
+    if (payload?.action !== "manual-paid") {
+      return NextResponse.json({ error: "Unsupported action" }, { status: 400 });
+    }
+
+    const updated = await withRetry(async () => {
+      return prisma.order.update({
+        where: { id: orderId },
+        data: {
+          status: "PAID",
+          paymentLink: null,
+          midtransOrderId: null,
+          midtransTransactionId: null,
+        },
+        select: ORDER_SELECT,
+      });
+    }, 2, "order-manual-paid");
+
+    logRouteComplete("order-patch");
+    return NextResponse.json(updated);
+  } catch (error) {
+    return NextResponse.json(createErrorResponse("manual paid", error), {
+      status: 500,
+    });
   }
 }
