@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
@@ -30,7 +30,16 @@ type MonitoringOrder = {
   }>;
 };
 
+type MonitoringNotification = {
+  id: string;
+  message: string;
+  type: "new" | "paid";
+  createdAt: number;
+};
+
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
+const AUTO_REFRESH_MS = 30_000;
+const MAX_NOTIFICATIONS = 6;
 
 function calculateDaysLeft(dateString?: string | null) {
   if (!dateString) return null;
@@ -60,6 +69,14 @@ function getUrgencyMeta(daysLeft: number | null) {
   return { label: `${daysLeft} days`, className: "bg-gray-100 text-gray-800" };
 }
 
+function describeOrder(order: MonitoringOrder) {
+  const customer = order.customer?.trim();
+  if (customer) {
+    return `${customer} • ${order.outlet}`;
+  }
+  return order.outlet;
+}
+
 export default function MonitoringPage() {
   const { user } = useAuth();
   const lockedRegion = lockedLocation(user);
@@ -70,6 +87,10 @@ export default function MonitoringPage() {
   const [searchDraft, setSearchDraft] = useState("");
   const [search, setSearch] = useState("");
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [notifications, setNotifications] = useState<MonitoringNotification[]>([]);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
+  const prevOrdersRef = useRef<Map<number, MonitoringOrder>>(new Map());
+  const hasInitializedRef = useRef(false);
 
   useEffect(() => {
     if (lockedRegion) {
@@ -77,8 +98,64 @@ export default function MonitoringPage() {
     }
   }, [lockedRegion]);
 
-  const loadOrders = useCallback(async () => {
-    setLoading(true);
+  const recordOrderActivity = useCallback(
+    (nextOrders: MonitoringOrder[], options?: { skipNotifications?: boolean }) => {
+      const prevMap = prevOrdersRef.current;
+      const nextMap = new Map(nextOrders.map((order) => [order.id, order]));
+      prevOrdersRef.current = nextMap;
+
+      if (!hasInitializedRef.current) {
+        hasInitializedRef.current = true;
+        return;
+      }
+
+      if (options?.skipNotifications) {
+        return;
+      }
+
+      const updates: MonitoringNotification[] = [];
+      const now = Date.now();
+
+      for (const order of nextOrders) {
+        const prev = prevMap.get(order.id);
+        if (!prev) {
+          updates.push({
+            id: `new-${order.id}-${now}`,
+            type: "new",
+            createdAt: now,
+            message: `Order ${describeOrder(order)} (#${order.id}) baru masuk (${order.location}).`,
+          });
+          continue;
+        }
+
+        const prevStatus = (prev.status || "").toUpperCase();
+        const nextStatus = (order.status || "").toUpperCase();
+        if (prevStatus === "NOT PAID" && nextStatus === "PAID") {
+          updates.push({
+            id: `paid-${order.id}-${now}`,
+            type: "paid",
+            createdAt: now,
+            message: `Order ${describeOrder(order)} (#${order.id}) sekarang PAID.`,
+          });
+        }
+      }
+
+      if (!updates.length) {
+        return;
+      }
+
+      setNotifications((prev) => {
+        const merged = [...updates, ...prev];
+        return merged.slice(0, MAX_NOTIFICATIONS);
+      });
+    },
+    []
+  );
+
+  const loadOrders = useCallback(async (options?: { silent?: boolean; skipNotifications?: boolean }) => {
+    if (!options?.silent) {
+      setLoading(true);
+    }
     setError("");
     try {
       const params = new URLSearchParams({ page: "1", pageSize: "200" });
@@ -89,18 +166,30 @@ export default function MonitoringPage() {
         throw new Error("Failed to fetch monitoring data");
       }
       const data = await res.json();
-      setOrders(Array.isArray(data.rows) ? data.rows : []);
+      const fetched = Array.isArray(data.rows) ? data.rows : [];
+      setOrders(fetched);
+      recordOrderActivity(fetched, options);
+      setLastUpdatedAt(Date.now());
     } catch (err) {
       console.error("Failed to load monitoring data:", err);
       setError(err instanceof Error ? err.message : "Failed to load monitoring data");
       setOrders([]);
     } finally {
-      setLoading(false);
+      if (!options?.silent) {
+        setLoading(false);
+      }
     }
-  }, [location, search]);
+  }, [location, search, recordOrderActivity]);
 
   useEffect(() => {
-    loadOrders();
+    loadOrders({ skipNotifications: true });
+  }, [loadOrders]);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      loadOrders({ silent: true });
+    }, AUTO_REFRESH_MS);
+    return () => clearInterval(timer);
   }, [loadOrders]);
 
   useEffect(() => {
@@ -162,6 +251,15 @@ export default function MonitoringPage() {
           </Button>
         </div>
       </div>
+      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500">
+        <p>Auto refresh setiap {AUTO_REFRESH_MS / 1000} detik untuk menampilkan aktivitas terbaru.</p>
+        {lastUpdatedAt && (
+          <p>
+            Update terakhir:{" "}
+            {new Date(lastUpdatedAt).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
+          </p>
+        )}
+      </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="rounded border border-red-200 bg-red-50 p-4">
@@ -219,6 +317,38 @@ export default function MonitoringPage() {
           <Button type="button" variant="outline" onClick={clearFilters} disabled={loading}>Clear</Button>
         </div>
       </div>
+
+      {notifications.length > 0 && (
+        <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <p className="text-sm font-semibold text-slate-800">Aktivitas Terbaru</p>
+            <button
+              type="button"
+              className="text-xs text-slate-500 hover:text-slate-700"
+              onClick={() => setNotifications([])}
+            >
+              Bersihkan
+            </button>
+          </div>
+          <ul className="space-y-2 text-sm text-slate-800">
+            {notifications.map((note) => (
+              <li key={note.id} className="flex items-start gap-2">
+                <span
+                  className={`mt-1 size-2 rounded-full ${
+                    note.type === "new" ? "bg-emerald-500" : "bg-blue-500"
+                  }`}
+                />
+                <div>
+                  <p>{note.message}</p>
+                  <p className="text-xs text-slate-500">
+                    {new Date(note.createdAt).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
+                  </p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {error && <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
 
