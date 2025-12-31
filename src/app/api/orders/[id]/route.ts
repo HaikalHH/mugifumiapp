@@ -229,8 +229,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
     if (shouldRegenerateSnap) {
       try {
+        const currentItems = finalOrder?.items ?? [];
         const snapItems = resolvedItems.map((item) => {
-          const matching = finalOrder.items.find((it) => it.productId === item.productId);
+          const matching = currentItems.find((it) => it.productId === item.productId);
           const product = matching?.product;
           return {
             id: (product?.id || item.productId).toString(),
@@ -274,6 +275,12 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     }
 
     logRouteComplete('order-update');
+    if (!finalOrder) {
+      return NextResponse.json(
+        createErrorResponse("update order", new Error("Failed to load updated order")),
+        { status: 500 },
+      );
+    }
     return NextResponse.json(finalOrder);
   } catch (error) {
     return NextResponse.json(
