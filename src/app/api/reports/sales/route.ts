@@ -40,6 +40,7 @@ export async function GET(req: NextRequest) {
           discount: true,
           totalAmount: true,
           actPayout: true,
+          ongkirPlan: true,
           midtransFee: true,
           items: {
             select: {
@@ -72,7 +73,6 @@ export async function GET(req: NextRequest) {
       const isFree = order.outlet.toLowerCase() === "free";
       const isWhatsApp = order.outlet.toLowerCase() === "whatsapp";
       const isB2BOutlet = order.outlet.toLowerCase() === "cafe" || order.outlet.toLowerCase() === "wholesale";
-      const recordedMidtransFee = order.midtransFee ?? 0;
       
       // Calculate subtotal from order items
       const preDiscountSubtotal = orderItems.reduce((acc: number, item: any) => acc + (item.price * item.quantity), 0);
@@ -99,16 +99,24 @@ export async function GET(req: NextRequest) {
       const resolvedActual = order.actPayout != null
         ? order.actPayout
         : (order.totalAmount != null ? order.totalAmount : null);
+      const recordedMidtransFee = order.midtransFee ?? 0;
+      const planOngkirValue = order.ongkirPlan || 0;
 
       // For orders, actual received is actPayout if available, otherwise totalAmount
       // For Free outlet, set to 0
-      // For Cafe outlet, if no actPayout, set to 0
-      // For WhatsApp, subtract ongkir difference even if actPayout is filled
-      const actual = isFree ? 0 : 
-        (isCafe ? (order.actPayout ?? 0) : 
-        (isWhatsApp
-          ? (resolvedActual != null ? Math.max(0, resolvedActual - ongkirDifference) : null)
-          : resolvedActual));
+      // For Cafe outlet, actual = actPayout (or 0 if empty)
+      // For WhatsApp, gunakan nilai barang (setelah diskon) dan hanya kurangi selisih ongkir yang lebih besar
+      let actual: number | null;
+      if (isFree) {
+        actual = 0;
+      } else if (isCafe) {
+        actual = order.actPayout ?? 0;
+      } else if (isWhatsApp) {
+        const extraOngkir = Math.max(0, ongkirDifference);
+        actual = Math.max(0, discountedSubtotal - extraOngkir);
+      } else {
+        actual = resolvedActual;
+      }
 
       // Potongan calculation for orders:
       // - Free: 100% (all is potongan since actual is 0)

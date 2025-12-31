@@ -35,29 +35,12 @@ export async function POST(req: Request) {
             throw new Error("Product not found");
           }
 
-          const existing = await tx.inventory.findMany({
+          await tx.inventory.deleteMany({
             where: { productId, location, status: "READY" },
-            select: { id: true },
-            orderBy: { id: "asc" },
           });
 
-          const currentCount = existing.length;
-          if (quantity === currentCount) {
-            return { product, location, quantity };
-          }
-
-          if (quantity < currentCount) {
-            const removeIds = existing
-              .slice(0, currentCount - quantity)
-              .map((item) => item.id);
-            if (removeIds.length > 0) {
-              await tx.inventory.deleteMany({
-                where: { id: { in: removeIds } },
-              });
-            }
-          } else {
-            const toAdd = quantity - currentCount;
-            const insertData = Array.from({ length: toAdd }).map((_, idx) => {
+          if (quantity > 0) {
+            const insertData = Array.from({ length: quantity }).map((_, idx) => {
               const unique = `${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 8)}`.toUpperCase();
               return {
                 barcode: `AUTO-${product.code}-${unique}`,
@@ -66,9 +49,7 @@ export async function POST(req: Request) {
                 status: "READY" as const,
               };
             });
-            if (insertData.length > 0) {
-              await tx.inventory.createMany({ data: insertData });
-            }
+            await tx.inventory.createMany({ data: insertData });
           }
 
           return { product, location, quantity };

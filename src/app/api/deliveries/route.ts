@@ -113,11 +113,13 @@ export async function POST(req: NextRequest) {
       deliveryDate,
       ongkirActual,
       items,
+      forceRefund,
     } = body as {
       orderId: number;
       deliveryDate?: string;
       ongkirActual?: number;
       items?: Array<{ productId: number; quantity: number }>;
+      forceRefund?: boolean;
     };
 
     if (!orderId) {
@@ -138,6 +140,13 @@ export async function POST(req: NextRequest) {
     if (normalized.length === 0) {
       return NextResponse.json({ error: "at least one product quantity must be greater than zero" }, { status: 400 });
     }
+
+    const confirmError = (details: Array<{ productId: number; code: string; name?: string | null; requested: number; available: number }>) => {
+      const err = new Error("DELIVERY_REFUND_CONFIRM");
+      (err as any).code = "DELIVERY_REFUND_CONFIRM";
+      (err as any).shortages = details;
+      return err;
+    };
 
     const created = await withRetry(async () => {
       return prisma.$transaction(async (tx) => {
@@ -206,6 +215,32 @@ export async function POST(req: NextRequest) {
 
         if (requestedMap.size === 0) {
           throw new Error("No valid items to deliver");
+        }
+
+        if (!forceRefund) {
+          const shortages: Array<{ productId: number; code: string; name?: string | null; requested: number; available: number }> = [];
+          for (const [productId, quantity] of requestedMap.entries()) {
+            const available = await tx.inventory.count({
+              where: {
+                productId,
+                status: "READY",
+                location: order.location,
+              },
+            });
+            if (available < quantity) {
+              const info = orderItemMap.get(productId)!;
+              shortages.push({
+                productId,
+                code: info.product.code || String(productId),
+                name: info.product.name,
+                requested: quantity,
+                available,
+              });
+            }
+          }
+          if (shortages.length > 0) {
+            throw confirmError(shortages);
+          }
         }
 
         const inventoryUsages: Array<{ productId: number; barcode: string; price: number }> = [];
@@ -444,9 +479,16 @@ export async function POST(req: NextRequest) {
     logRouteComplete('deliveries-create', 1);
     return NextResponse.json(created, { status: 201 });
   } catch (e: any) {
-    return NextResponse.json(
-      createErrorResponse("create delivery", e), 
-      { status: 500 }
-    );
+    if (e?.code === "DELIVERY_REFUND_CONFIRM") {
+      return NextResponse.json(
+        {
+          error: "Konfirmasi refund diperlukan",
+          code: "DELIVERY_REFUND_CONFIRM",
+          shortages: e.shortages || [],
+        },
+        { status: 409 },
+      );
+    }
+    return NextResponse.json(createErrorResponse("create delivery", e), { status: 500 });
   }
 }

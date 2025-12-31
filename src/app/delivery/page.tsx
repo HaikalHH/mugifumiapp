@@ -322,26 +322,51 @@ export default function DeliveryPage() {
       payload.ongkirActual = ongkirActualNum;
     }
 
-    setIsSubmitting(true);
-    const res = await fetch("/api/deliveries", { 
-      method: "POST", 
-      headers: { "Content-Type": "application/json" }, 
-      body: JSON.stringify(payload) 
-    });
-    const data = await res.json().catch(() => ({} as any));
+    const sendDelivery = async (forceRefund: boolean): Promise<boolean> => {
+      const res = await fetch("/api/deliveries", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...payload, forceRefund }),
+      });
+      const data = await res.json().catch(() => ({} as any));
 
-    if (res.ok) {
-      if (Array.isArray(data?.refunds) && data.refunds.length > 0) {
-        const message = data.refunds
-          .map((r: any) => `${r.name || r.code || "-"}: ${r.quantity}`)
-          .join("\n");
-        alert(`Refund/Cancel:\n${message}`);
+      if (res.ok) {
+        if (Array.isArray(data?.refunds) && data.refunds.length > 0) {
+          const message = data.refunds.map((r: any) => `${r.name || r.code || "-"}: ${r.quantity}`).join("\n");
+          alert(`Refund/Cancel:\n${message}`);
+        }
+        setIsModalOpen(false);
+        loadDeliveries();
+        loadPendingOrders();
+        return true;
       }
-      setIsModalOpen(false);
-      loadDeliveries();
-      loadPendingOrders(); // Refresh pending orders
-    } else {
+
+      if (res.status === 409 && data?.code === "DELIVERY_REFUND_CONFIRM") {
+        const shortages: Array<{ name?: string; code?: string; requested: number; available: number }> = data.shortages || [];
+        const message =
+          shortages.length > 0
+            ? shortages
+                .map(
+                  (s) =>
+                    `${s.name || s.code || "-"}\n  Diminta: ${s.requested}\n  Ready: ${s.available}`,
+                )
+                .join("\n\n")
+            : "Beberapa produk tidak memiliki stok cukup.";
+        const confirmMessage = `${message}\n\nLanjut proses dan refund otomatis sisa produk?`;
+        if (window.confirm(confirmMessage)) {
+          return await sendDelivery(true);
+        }
+        return false;
+      }
+
       setError(data?.error || "Failed to create delivery");
+      return false;
+    };
+
+    setIsSubmitting(true);
+    const success = await sendDelivery(false);
+    if (!success) {
+      // keep modal open and allow adjustments
     }
     setIsSubmitting(false);
   };
