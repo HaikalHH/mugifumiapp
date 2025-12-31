@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Label } from "../../../components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../components/ui/table";
-import { useAuth } from "../../providers";
+import { useAuth, hasRole } from "../../providers";
 
 type CategoryRow = { category: string; amount: number };
 type PeriodReport = {
@@ -35,7 +35,11 @@ export default function ReportsFinancePage() {
     setReports(Array.isArray(data.reports) ? data.reports : []);
   }, [year, month]);
 
-  useEffect(() => { if (user?.role === "Admin" || user?.role === "Manager") load(); }, [user, load]);
+  useEffect(() => {
+    if (hasRole(user, "Admin") || hasRole(user, "Manager")) {
+      load();
+    }
+  }, [user, load]);
 
   const years = useMemo(() => {
     const now = new Date().getFullYear();
@@ -43,7 +47,7 @@ export default function ReportsFinancePage() {
   }, []);
   const months = useMemo(() => Array.from({ length: 12 }).map((_, i) => String(i + 1)), []);
 
-  if (user?.role !== "Admin" && user?.role !== "Manager") {
+  if (!hasRole(user, "Admin") && !hasRole(user, "Manager")) {
     return <main className="p-6"><div className="text-sm text-gray-600">Akses ditolak.</div></main>;
   }
 

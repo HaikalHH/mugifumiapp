@@ -2,7 +2,7 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 
-export type Role = "Admin" | "Manager" | "Sales" | "Bandung" | "Jakarta" | "Baker" | "BDGSales";
+export type Role = "Admin" | "Manager" | "ManagerSales" | "Sales" | "Bandung" | "Jakarta" | "Baker" | "BDGSales" | "JKTSales";
 export type AppUser = { id: number; username: string; name: string; role: Role | string };
 
 type AuthState = {
@@ -68,6 +68,14 @@ function roleTokens(val: string | null | undefined): string[] {
     set.add("bandung");
     set.add("sales");
   }
+  if (set.has("jktsales")) {
+    set.add("jakarta");
+    set.add("sales");
+  }
+  if (set.has("managersales")) {
+    set.add("manager");
+    set.add("sales");
+  }
   return Array.from(set);
 }
 
@@ -120,6 +128,10 @@ export function hasAccess(
   if (page === "overtimeApprovals" || page === "payroll" || page === "users" || page === "bonus") return false;
 
   // Existing menus by role
+  if (roles.has("managersales")) {
+    if (page === "delivery" || page === "reports" || page === "planning" || page === "inventory") return true;
+    return false;
+  }
   if (roles.has("manager")) return page === "reports" || page === "planning";
   if (roles.has("sales")) return page === "inventory" || page === "orders";
   if (roles.has("baker")) return page === "inventory" || page === "slip" || page === "planning";
@@ -139,6 +151,7 @@ export function hasAccess(
 export function lockedLocation(roleOrUser: Role | AppUser | null): "Bandung" | "Jakarta" | null {
   const r = (roleOrUser && typeof roleOrUser === "object" ? (roleOrUser as AppUser).role : roleOrUser) as string | null;
   const tokens = roleTokens(r || "");
+  if (tokens.includes("jktsales")) return null;
   if (tokens.includes("bandung")) return "Bandung";
   if (tokens.includes("jakarta")) return "Jakarta";
   return null;

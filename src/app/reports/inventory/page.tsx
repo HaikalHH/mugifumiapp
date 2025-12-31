@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../components/ui/table";
-import { useAuth } from "../../providers";
+import { useAuth, hasRole } from "../../providers";
 
 export default function ReportsInventoryPage() {
   const { user } = useAuth();
@@ -12,9 +12,13 @@ export default function ReportsInventoryPage() {
     setInv(a);
   }, []);
 
-  useEffect(() => { if (user?.role === "Admin" || user?.role === "Manager") load(); }, [load, user]);
+  useEffect(() => {
+    if (hasRole(user, "Admin") || hasRole(user, "Manager")) {
+      load();
+    }
+  }, [load, user]);
 
-  if (user?.role !== "Admin" && user?.role !== "Manager") {
+  if (!hasRole(user, "Admin") && !hasRole(user, "Manager")) {
     return <main className="p-6"><div className="text-sm text-gray-600">Akses ditolak.</div></main>;
   }
 

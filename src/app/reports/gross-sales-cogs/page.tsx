@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import { useAuth } from "../../providers";
+import { useAuth, hasRole } from "../../providers";
 import { Label } from "../../../components/ui/label";
 import { Button } from "../../../components/ui/button";
 import { DateTimePicker } from "../../../components/ui/date-picker";
@@ -52,12 +52,12 @@ export default function ReportsGrossSalesCogsPage() {
   }, [from, to, menuLocation, menuOutlet]);
 
   useEffect(() => {
-    if (user?.role === "Admin" || user?.role === "Manager") {
+    if (hasRole(user, "Admin") || hasRole(user, "Manager")) {
       loadMenuItems();
     }
   }, [loadMenuItems, user]);
 
-  if (user?.role !== "Admin" && user?.role !== "Manager") {
+  if (!hasRole(user, "Admin") && !hasRole(user, "Manager")) {
     return <main className="p-6"><div className="text-sm text-gray-600">Akses ditolak.</div></main>;
   }
 

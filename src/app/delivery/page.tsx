@@ -88,7 +88,7 @@ type Delivery = {
   }>;
 };
 
-import { useAuth } from "../providers";
+import { useAuth, hasRole } from "../providers";
 
 export default function DeliveryPage() {
   const { user } = useAuth();
@@ -128,7 +128,7 @@ export default function DeliveryPage() {
 
   // Lock region filter based on user role
   const getInitialRegion = useCallback(() => {
-    if (user?.role === "Admin" || user?.role === "Manager") {
+    if (hasRole(user, "Admin") || hasRole(user, "Manager")) {
       return "all"; // Admin and Manager can see all regions
     } else if (user?.role === "Jakarta") {
       return "Jakarta"; // Jakarta user locked to Jakarta
@@ -353,7 +353,7 @@ export default function DeliveryPage() {
       <div className="flex gap-3 items-end">
         <div className="flex flex-col gap-1">
           <Label>Filter by Region</Label>
-          {(user?.role === "Admin" || user?.role === "Manager") ? (
+          {(hasRole(user, "Admin") || hasRole(user, "Manager")) ? (
             <Select value={regionFilter} onValueChange={setRegionFilter}>
               <SelectTrigger className="w-[200px]">
                 <SelectValue placeholder="All Regions" />

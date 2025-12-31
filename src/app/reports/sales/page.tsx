@@ -5,7 +5,7 @@ import { Button } from "../../../components/ui/button";
 import { DateTimePicker } from "../../../components/ui/date-picker";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../components/ui/select";
-import { useAuth } from "../../providers";
+import { useAuth, hasRole } from "../../providers";
 import { getStartOfDayJakarta, getEndOfDayJakarta } from "../../../lib/timezone";
 
 export default function ReportsSalesPage() {
@@ -43,10 +43,14 @@ export default function ReportsSalesPage() {
     }
   };
 
-  useEffect(() => { if (user?.role === "Admin" || user?.role === "Manager") load(); }, [load, user]);
+  useEffect(() => {
+    if (hasRole(user, "Admin") || hasRole(user, "Manager")) {
+      load();
+    }
+  }, [load, user]);
   useEffect(() => { setB2bPage(1); }, [filterType, sales, from, to]);
 
-  if (user?.role !== "Admin" && user?.role !== "Manager") {
+  if (!hasRole(user, "Admin") && !hasRole(user, "Manager")) {
     return <main className="p-6"><div className="text-sm text-gray-600">Akses ditolak.</div></main>;
   }
 
