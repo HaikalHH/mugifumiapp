@@ -16,16 +16,6 @@ type SnapCreateParams = {
   expiryMinutes?: number;
 };
 
-const DEFAULT_ENABLED_PAYMENTS = [
-  "bca_va",
-  "bni_va",
-  "bri_va",
-  "permata_va",
-  "echannel", // Mandiri VA
-  "cimb_va",
-  "gopay",
-] as const;
-
 function resolveAppBaseUrl() {
   const candidates = [
     process.env.MIDTRANS_APP_BASE_URL,
@@ -65,10 +55,9 @@ function getMidtransConfig() {
   return { serverKey, baseUrl, finishUrl, pendingUrl, errorUrl };
 }
 
-function getEnabledPayments(): string[] {
+function getEnabledPayments(): string[] | undefined {
   const raw = process.env.MIDTRANS_ENABLED_PAYMENTS;
-  const fallback = [...DEFAULT_ENABLED_PAYMENTS];
-  if (!raw || !raw.trim()) return fallback;
+  if (!raw || !raw.trim()) return undefined;
 
   const clean = (value: unknown): string | null => {
     if (typeof value !== "string") return null;
@@ -88,13 +77,10 @@ function getEnabledPayments(): string[] {
     // fall through to comma parsing
   }
 
-  const fromComma = raw
-    .split(",")
-    .map((entry) => clean(entry))
-    .filter((v): v is string => Boolean(v));
-  const candidates = fromComma.length > 0 ? fromComma : fallback;
+  const fromComma = raw.split(",").map((entry) => clean(entry)).filter((v): v is string => Boolean(v));
+  if (fromComma.length === 0) return undefined;
   const seen = new Set<string>();
-  return candidates.filter((value) => {
+  return fromComma.filter((value) => {
     if (seen.has(value)) return false;
     seen.add(value);
     return true;
@@ -106,6 +92,7 @@ export async function createSnapTransaction(params: SnapCreateParams) {
   const expiryMinutes = params.expiryMinutes ?? 60;
   const enabledPayments = getEnabledPayments();
   const includesPayment = (code: string) => {
+    if (!enabledPayments) return true;
     return enabledPayments.includes(code);
   };
   const snapCallbackUrl = process.env.MIDTRANS_GOPAY_CALLBACK_URL || finishUrl || pendingUrl || errorUrl || undefined;
