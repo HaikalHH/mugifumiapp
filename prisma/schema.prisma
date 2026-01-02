@@ -27,6 +27,7 @@ model User {
   overtimeRequests  OvertimeRequest[]
   bonuses           UserBonus[]
   manualPenalties   ManualPenalty[]
+  payrollSnapshots  PayrollSnapshot[]
 }
 
 model Attendance {
@@ -366,4 +367,20 @@ model UserBonus {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, year, month])
+}
+
+model PayrollSnapshot {
+  id          Int      @id @default(autoincrement())
+  userId      Int
+  year        Int
+  month       Int       // 1..12
+  baseSalary  Int       @default(0)
+  hourlyRate  Int       @default(0)
+  penaltyRate Int       @default(0)
+  createdAt   DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, year, month])
+  @@index([year, month])
 }

@@ -260,7 +260,7 @@ export async function POST(req: NextRequest) {
           }
           const code = (orderInfo.product.code || "").toUpperCase();
           const isBox = code.startsWith("BOX-");
-          const price = orderInfo.product.price || 0;
+          const price = typeof orderInfo.price === "number" ? orderInfo.price : orderInfo.product.price || 0;
           let fulfilledQuantity = requestedQuantity;
 
           if (isBox) {

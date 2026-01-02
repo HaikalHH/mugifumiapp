@@ -29,18 +29,56 @@ export async function GET(req: Request) {
       prisma.manualPenalty.findMany({ where: { year: y, month: m } }),
     ]);
 
+    const existingSnapshots = await prisma.payrollSnapshot.findMany({
+      where: { year: y, month: m },
+    });
+    const snapshotMap = new Map(existingSnapshots.map((snap) => [snap.userId, snap]));
+
+    const missingUsers = users.filter((u) => !snapshotMap.has(u.id));
+    if (missingUsers.length > 0) {
+      const payload = missingUsers.map((u) => {
+        const baseSalary = u.baseSalary || 0;
+        const hourlyRate = typeof u.overtimeHourlyRate === "number" ? u.overtimeHourlyRate : Math.floor(baseSalary / 160);
+        const penaltyRate = Math.floor(baseSalary / 240);
+        return {
+          userId: u.id,
+          year: y,
+          month: m,
+          baseSalary,
+          hourlyRate,
+          penaltyRate,
+        };
+      });
+      await prisma.payrollSnapshot.createMany({
+        data: payload,
+        skipDuplicates: true,
+      });
+      if (payload.length) {
+        const fresh = await prisma.payrollSnapshot.findMany({
+          where: { year: y, month: m, userId: { in: payload.map((p) => p.userId) } },
+        });
+        for (const snap of fresh) {
+          snapshotMap.set(snap.userId, snap);
+        }
+      }
+    }
+
     const byUser: Record<number, any> = {};
     for (const u of users) {
-      const hourlyRate = u.overtimeHourlyRate ?? Math.floor((u.baseSalary || 0) / 160); // for overtime
-      const penaltyRate = Math.floor((u.baseSalary || 0) / 240); // penalty uses base/240, independent of overtime rate
+      const snapshot = snapshotMap.get(u.id);
+      const baseSalary = snapshot?.baseSalary ?? u.baseSalary ?? 0;
+      const hourlyRate =
+        snapshot?.hourlyRate ??
+        (typeof u.overtimeHourlyRate === "number" ? u.overtimeHourlyRate : Math.floor(baseSalary / 160));
+      const penaltyRate = snapshot?.penaltyRate ?? Math.floor(baseSalary / 240); // penalty uses base/240, independent of overtime rate
       byUser[u.id] = {
-        user: { id: u.id, name: u.name, username: u.username, role: u.role, baseSalary: u.baseSalary, hourlyRate, penaltyRate },
+        user: { id: u.id, name: u.name, username: u.username, role: u.role, baseSalary, hourlyRate, penaltyRate },
         totals: { latenessMinutes: 0, workedMinutes: 0, overtimeMinutes: 0 },
         penalty: 0, // lateness
         manualPenalty: 0,
         manualPenaltyDetails: [] as Array<{ amount: number; reason: string | null }>,
         overtimePay: 0,
-        netSalary: u.baseSalary,
+        netSalary: baseSalary,
         bonus: 0,
       };
     }
