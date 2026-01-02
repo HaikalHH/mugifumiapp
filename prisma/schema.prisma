@@ -134,6 +134,7 @@ model Order {
   totalAmount    Int?
   actPayout      Int?
   ongkirPlan     Int?
+  selfPickup     Boolean    @default(false)
   createdAt      DateTime   @default(now())
   paymentLink    String?
   midtransOrderId String?

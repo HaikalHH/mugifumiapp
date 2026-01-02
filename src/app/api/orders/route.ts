@@ -26,6 +26,7 @@ const ORDER_SELECT = {
   totalAmount: true,
   actPayout: true,
   ongkirPlan: true,
+  selfPickup: true,
   paymentLink: true,
   midtransOrderId: true,
   midtransTransactionId: true,
@@ -149,6 +150,7 @@ export async function POST(req: NextRequest) {
       actPayout,
       ongkirPlan,
       items, // Array of { productId, quantity }
+      selfPickup,
     } = body as {
       outlet: string;
       customer?: string;
@@ -160,6 +162,7 @@ export async function POST(req: NextRequest) {
       actPayout?: number | null;
       ongkirPlan?: number | null;
       items?: Array<{ productId: number; quantity: number }>;
+      selfPickup?: boolean;
     };
 
     if (!outlet || !location) {
@@ -177,7 +180,9 @@ export async function POST(req: NextRequest) {
     }
 
     const isWhatsAppOutlet = outlet.toLowerCase() === "whatsapp";
-    if (isWhatsAppOutlet) {
+    const normalizedSelfPickup = isWhatsAppOutlet ? Boolean(selfPickup) : false;
+
+    if (isWhatsAppOutlet && !normalizedSelfPickup) {
       if (ongkirPlan === undefined || ongkirPlan === null || Number.isNaN(Number(ongkirPlan)) || Number(ongkirPlan) <= 0) {
         return NextResponse.json({ error: "ongkirPlan is required for WhatsApp orders" }, { status: 400 });
       }
@@ -220,7 +225,7 @@ export async function POST(req: NextRequest) {
       return acc + product.price * item.quantity;
     }, 0);
 
-    const ongkirValue = isWhatsAppOutlet ? Math.round(Number(ongkirPlan)) : 0;
+    const ongkirValue = isWhatsAppOutlet && !normalizedSelfPickup ? Math.round(Number(ongkirPlan)) : 0;
     const subtotalAfterDiscount = discount
       ? Math.round(subtotal * (1 - discount / 100))
       : subtotal;
@@ -242,7 +247,8 @@ export async function POST(req: NextRequest) {
             discount: typeof discount === "number" && Number.isFinite(discount) ? discount : null,
             totalAmount,
             actPayout: normalizedActPayout,
-            ongkirPlan: isWhatsAppOutlet ? Math.round(Number(ongkirPlan)) : null,
+            ongkirPlan: isWhatsAppOutlet && !normalizedSelfPickup ? Math.round(Number(ongkirPlan)) : null,
+            selfPickup: normalizedSelfPickup,
             paymentLink: null,
             midtransOrderId: null,
             midtransTransactionId: null,

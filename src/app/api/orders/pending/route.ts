@@ -46,6 +46,7 @@ export async function GET(req: NextRequest) {
             totalAmount: true,
             actPayout: true,
             ongkirPlan: true,
+            selfPickup: true,
             items: {
               select: {
                 id: true,

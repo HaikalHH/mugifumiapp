@@ -27,6 +27,7 @@ type Order = {
   midtransOrderId?: string | null;
   midtransTransactionId?: string | null;
   midtransFee?: number | null;
+  selfPickup?: boolean | null;
   items: Array<{
     id: number;
     productId: number;
@@ -105,6 +106,7 @@ export default function OrdersPage() {
     estPayout: string;
     actPayout: string;
     ongkirPlan: string;
+    selfPickup: boolean;
   }>({
     customer: "",
     status: DEFAULT_ORDER_STATUS,
@@ -114,6 +116,7 @@ export default function OrdersPage() {
     estPayout: "",
     actPayout: "",
     ongkirPlan: "",
+    selfPickup: false,
   });
   const [editingOrderId, setEditingOrderId] = useState<number | null>(null);
   const [editingOutlet, setEditingOutlet] = useState<string>("");
@@ -129,7 +132,6 @@ export default function OrdersPage() {
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [quantity, setQuantity] = useState(1);
   const [inventoryOverview, setInventoryOverview] = useState<null | { byLocation: Record<string, Record<string, { total: number; reserved: number; available: number }>> }>(null);
-  const [lastPaymentLink, setLastPaymentLink] = useState<{ url: string; orderId?: number } | null>(null);
 
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
@@ -197,6 +199,7 @@ export default function OrdersPage() {
       estPayout: "",
       actPayout: "",
       ongkirPlan: "",
+      selfPickup: false,
     });
     setSelectedItems([]);
     setIsModalOpen(true);
@@ -359,6 +362,7 @@ export default function OrdersPage() {
       estPayout: "",
       actPayout: order.actPayout?.toString() || "",
       ongkirPlan: order.ongkirPlan ? order.ongkirPlan.toString() : "",
+      selfPickup: Boolean(order.selfPickup),
     });
       
       // Ensure we have complete product data for each item
@@ -450,15 +454,6 @@ export default function OrdersPage() {
     }
   };
 
-  const copyPaymentLink = async (url: string) => {
-    if (!url) return;
-    try {
-      await navigator.clipboard.writeText(url);
-    } catch {
-      window.prompt("Copy payment link", url);
-    }
-  };
-
   const handleModalOutletChange = (value: string) => {
     if (isWhatsAppPage) {
       setOutlet("WhatsApp");
@@ -466,17 +461,24 @@ export default function OrdersPage() {
       setForm((prev) => ({
         ...prev,
         status: "NOT PAID",
+        selfPickup: prev.selfPickup,
       }));
       return;
     }
     if (editingOrderId) {
       setEditingOutlet(value);
+      setForm((prev) => ({
+        ...prev,
+        status: value === "WhatsApp" ? "NOT PAID" : DEFAULT_ORDER_STATUS,
+        selfPickup: value === "WhatsApp" ? prev.selfPickup : false,
+      }));
       return;
     }
     setOutlet(value);
     setForm((prev) => ({
       ...prev,
       status: value === "WhatsApp" ? "NOT PAID" : DEFAULT_ORDER_STATUS,
+      selfPickup: value === "WhatsApp" ? prev.selfPickup : false,
     }));
   };
 
@@ -499,7 +501,7 @@ export default function OrdersPage() {
       setError("Delivery Date tidak boleh sebelum Order Date");
       return;
     }
-    if (isWhatsAppModal) {
+    if (isWhatsAppModal && !form.selfPickup) {
       const ongkirNum = Number(form.ongkirPlan);
       if (!ongkirNum || Number.isNaN(ongkirNum) || ongkirNum <= 0) {
         setError("Ongkir Plan wajib diisi untuk WhatsApp");
@@ -529,6 +531,7 @@ export default function OrdersPage() {
       actPayout: number | null;
       ongkirPlan: number | null;
       items: Array<{ productId: number; quantity: number }>;
+      selfPickup: boolean;
     };
 
     const payload: OrderUpsertPayload = {
@@ -540,11 +543,12 @@ export default function OrdersPage() {
       deliveryDate: deliveryDateUTC.toISOString(),
       discount: form.discount ? Number(form.discount) : null,
       actPayout: outletHasActPayout(currentOutlet) && form.actPayout ? Number(form.actPayout) : null,
-      ongkirPlan: isWhatsAppModal ? Number(form.ongkirPlan) : null,
+      ongkirPlan: isWhatsAppModal && !form.selfPickup ? Number(form.ongkirPlan) : null,
       items: selectedItems.map(item => ({
         productId: item.productId,
         quantity: item.quantity
       })),
+      selfPickup: isWhatsAppModal ? form.selfPickup : false,
     };
 
     setIsSubmitting(true);
@@ -560,12 +564,6 @@ export default function OrdersPage() {
     const data = await res.json().catch(() => null);
 
     if (res.ok) {
-      if (currentOutlet.toLowerCase() === "whatsapp" && data?.paymentLink) {
-        setLastPaymentLink({
-          url: data.paymentLink,
-          orderId: data.id,
-        });
-      }
       // Send WhatsApp notification only on create (not on edit)
       if (!editingOrderId) {
         try {
@@ -623,7 +621,8 @@ export default function OrdersPage() {
     }, 0);
     const discount = form.discount ? Number(form.discount) : 0;
     const afterDiscount = discount > 0 ? Math.round(subtotal * (1 - discount / 100)) : subtotal;
-    const ongkirValue = isWhatsAppModal ? Number(form.ongkirPlan || 0) : 0;
+    const requireOngkir = isWhatsAppModal && !form.selfPickup;
+    const ongkirValue = requireOngkir ? Number(form.ongkirPlan || 0) : 0;
     return afterDiscount + (Number.isFinite(ongkirValue) ? ongkirValue : 0);
   };
 
@@ -719,20 +718,6 @@ export default function OrdersPage() {
         </Button>
       </div>
 
-      {lastPaymentLink && (
-        <div className="border rounded p-3 bg-amber-50 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-          <div className="space-y-1">
-            <div className="font-medium">Payment link dibuat untuk Order #{lastPaymentLink.orderId ?? "-"}</div>
-            <div className="text-sm text-gray-700 break-all">{lastPaymentLink.url}</div>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={() => copyPaymentLink(lastPaymentLink.url)}>Copy Link</Button>
-            <Button onClick={() => window.open(lastPaymentLink.url, "_blank")}>Open</Button>
-            <Button variant="outline" onClick={() => setLastPaymentLink(null)}>Dismiss</Button>
-          </div>
-        </div>
-      )}
-
       {/* Create Order Modal */}
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -813,15 +798,32 @@ export default function OrdersPage() {
               />
             </div>
             {isWhatsAppModal && (
-              <div className="flex flex-col gap-1">
-                <Label>Ongkir Plan (Rp)</Label>
-                <Input
-                  type="number"
-                  placeholder="e.g. 10000"
-                  value={form.ongkirPlan}
-                  onChange={(e) => setForm({ ...form, ongkirPlan: e.target.value })}
-                  required
-                />
+              <div className="flex flex-col gap-2">
+                <div className="flex flex-col gap-1">
+                  <Label>Ongkir Plan (Rp)</Label>
+                  <Input
+                    type="number"
+                    placeholder="e.g. 10000"
+                    value={form.ongkirPlan}
+                    onChange={(e) => setForm({ ...form, ongkirPlan: e.target.value })}
+                    disabled={form.selfPickup}
+                  />
+                </div>
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4"
+                    checked={form.selfPickup}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        selfPickup: e.target.checked,
+                        ongkirPlan: e.target.checked ? "" : prev.ongkirPlan,
+                      }))
+                    }
+                  />
+                  <span>Self pickup (tanpa ongkir)</span>
+                </label>
               </div>
             )}
             <div className="flex flex-col gap-1">
@@ -1071,15 +1073,6 @@ export default function OrdersPage() {
                     >
                       Edit
                     </Button>
-                    {order.outlet.toLowerCase() === "whatsapp" && normalizeOrderStatus(order.status) === "NOT PAID" && order.paymentLink && (
-                      <Button
-                        variant="link"
-                        className="p-0 h-auto text-amber-700"
-                        onClick={() => copyPaymentLink(order.paymentLink!)}
-                      >
-                        Copy Link
-                      </Button>
-                    )}
                     {order.outlet.toLowerCase() === "whatsapp" && normalizeOrderStatus(order.status) === "NOT PAID" && (
                       <Button
                         variant="link"

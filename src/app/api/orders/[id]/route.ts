@@ -17,6 +17,7 @@ const ORDER_SELECT = {
   totalAmount: true,
   actPayout: true,
   ongkirPlan: true,
+  selfPickup: true,
   paymentLink: true,
   midtransOrderId: true,
   midtransTransactionId: true,
@@ -77,6 +78,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       actPayout,
       ongkirPlan,
       items, // Array of { productId, quantity }
+      selfPickup,
     } = body as {
       outlet: string;
       customer?: string;
@@ -88,6 +90,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       actPayout?: number | null;
       ongkirPlan?: number | null;
       items?: Array<{ productId: number; quantity: number }>;
+      selfPickup?: boolean;
     };
 
     if (!outlet || !location) {
@@ -123,7 +126,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     if (!deliveryDate) {
       return NextResponse.json({ error: "deliveryDate is required" }, { status: 400 });
     }
-    if (isWhatsAppOutlet) {
+    const normalizedSelfPickup = isWhatsAppOutlet ? Boolean(selfPickup) : false;
+
+    if (isWhatsAppOutlet && !normalizedSelfPickup) {
       if (ongkirPlan === undefined || ongkirPlan === null || Number(ongkirPlan) <= 0) {
         return NextResponse.json({ error: "ongkirPlan is required for WhatsApp orders" }, { status: 400 });
       }
@@ -156,7 +161,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       subtotal = resolvedItems.reduce((sum, it) => sum + (it.price * it.quantity), 0);
     }
 
-    const ongkirValue = isWhatsAppOutlet ? Math.round(Number(ongkirPlan || 0)) : 0;
+    const ongkirValue = isWhatsAppOutlet && !normalizedSelfPickup ? Math.round(Number(ongkirPlan || 0)) : 0;
     const afterDiscount = discount 
       ? Math.round(subtotal * (1 - discount / 100))
       : subtotal;
@@ -175,7 +180,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       const itemsChanged = existingSignature !== nextSignature;
       const totalChanged = Math.round(existingOrder.totalAmount ?? 0) !== Math.round(totalAmount);
       const ongkirChanged = Math.round(existingOrder.ongkirPlan ?? 0) !== Math.round(ongkirValue);
-      shouldRegenerateSnap = itemsChanged || totalChanged || ongkirChanged;
+      const pickupChanged = Boolean(existingOrder.selfPickup) !== normalizedSelfPickup;
+      shouldRegenerateSnap = itemsChanged || totalChanged || ongkirChanged || pickupChanged;
     }
 
     // Use transaction to update order and items
@@ -201,7 +207,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
             discount: typeof discount === "number" && Number.isFinite(discount) ? discount : null,
             totalAmount,
             actPayout: actPayout || null,
-            ongkirPlan: isWhatsAppOutlet ? ongkirValue : null,
+            ongkirPlan: isWhatsAppOutlet && !normalizedSelfPickup ? ongkirValue : null,
+            selfPickup: normalizedSelfPickup,
           },
         });
 

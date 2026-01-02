@@ -51,6 +51,7 @@ export async function GET(req: NextRequest) {
               deliveryDate: true,
               location: true,
               ongkirPlan: true,
+              selfPickup: true,
               items: {
                 select: {
                   id: true,

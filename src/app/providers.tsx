@@ -133,6 +133,10 @@ export function hasAccess(
     return false;
   }
   if (roles.has("manager")) return page === "reports" || page === "planning";
+  if (roles.has("jktsales")) {
+    if (page === "inventory" || page === "orders" || page === "delivery" || page === "slip") return true;
+    return false;
+  }
   if (roles.has("sales")) return page === "inventory" || page === "orders";
   if (roles.has("baker")) return page === "inventory" || page === "slip" || page === "planning";
   if (roles.has("bandung") || roles.has("jakarta")) {

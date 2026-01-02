@@ -17,6 +17,7 @@ type Order = {
   deliveryDate?: string | null;
   location: string;
   ongkirPlan?: number | null;
+  selfPickup?: boolean | null;
   items: Array<{
     id: number;
     productId: number;
@@ -298,7 +299,10 @@ export default function DeliveryPage() {
     }
 
     // Validate Ongkir fields (only for WhatsApp outlet) - ongkirPlan read-only from order
-    if (selectedOrder?.outlet?.toLowerCase() === "whatsapp") {
+    const requiresOngkirActual =
+      selectedOrder?.outlet?.toLowerCase() === "whatsapp" && !selectedOrder?.selfPickup;
+
+    if (requiresOngkirActual) {
       if (!form.ongkirActual || form.ongkirActual === "") {
         setError("Ongkir (Actual) harus diisi");
         return;
@@ -317,7 +321,7 @@ export default function DeliveryPage() {
     };
 
     // Only include ongkir actual for WhatsApp outlet (plan comes from order)
-    if (selectedOrder?.outlet?.toLowerCase() === "whatsapp") {
+    if (requiresOngkirActual) {
       const ongkirActualNum = parseInt(form.ongkirActual.replace(/[^\d]/g, ""));
       payload.ongkirActual = ongkirActualNum;
     }
@@ -437,7 +441,16 @@ export default function DeliveryPage() {
               pendingOrders.map((order) => (
                 <TableRow key={order.id}>
                   <TableCell>{order.id}</TableCell>
-                  <TableCell>{order.outlet}</TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <span>{order.outlet}</span>
+                      {order.selfPickup && (
+                        <Badge color="gray" className="uppercase tracking-wide">
+                          Self Pickup
+                        </Badge>
+                      )}
+                    </div>
+                  </TableCell>
                   <TableCell>{order.customer || "-"}</TableCell>
                   <TableCell>{new Date(order.orderDate).toLocaleDateString()}</TableCell>
                   <TableCell>{order.location}</TableCell>
@@ -503,7 +516,16 @@ export default function DeliveryPage() {
             {deliveries.map((delivery) => (
               <TableRow key={delivery.id}>
                 <TableCell>{delivery.orderId}</TableCell>
-                <TableCell>{delivery.order.outlet}</TableCell>
+                <TableCell>
+                  <div className="flex items-center gap-2">
+                    <span>{delivery.order.outlet}</span>
+                    {delivery.order.selfPickup && (
+                      <Badge color="gray" className="uppercase tracking-wide">
+                        Self Pickup
+                      </Badge>
+                    )}
+                  </div>
+                </TableCell>
                 <TableCell>{delivery.order.customer || "-"}</TableCell>
                 <TableCell>{new Date(delivery.order.orderDate).toLocaleDateString()}</TableCell>
                 <TableCell>{delivery.order.location}</TableCell>
@@ -576,6 +598,11 @@ export default function DeliveryPage() {
                     <div><strong>Customer:</strong> {selectedOrder?.customer || "-"}</div>
                     <div><strong>Location:</strong> {selectedOrder?.location}</div>
                     <div><strong>Order Date:</strong> {selectedOrder?.orderDate ? new Date(selectedOrder.orderDate).toLocaleDateString() : "-"}</div>
+                    {selectedOrder?.selfPickup && (
+                      <div>
+                        <Badge color="gray">Self Pickup</Badge>
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div>
@@ -600,21 +627,26 @@ export default function DeliveryPage() {
                       disabled
                       className="w-full"
                     />
+                    {selectedOrder?.selfPickup && (
+                      <p className="text-xs text-muted-foreground mt-1">Pesanan ini self pickup, ongkir tidak digunakan.</p>
+                    )}
                   </div>
-                  <div>
-                    <h3 className="font-medium mb-2">Ongkir (Actual)</h3>
-                    <Input
-                      type="text"
-                      placeholder="Rp 0"
-                      value={form.ongkirActual}
-                      onChange={(e) => {
-                        const value = e.target.value.replace(/[^\d]/g, "");
-                        const formatted = value ? `Rp ${parseInt(value).toLocaleString("id-ID")}` : "";
-                        setForm({ ...form, ongkirActual: formatted });
-                      }}
-                      className="w-full"
-                    />
-                  </div>
+                  {!selectedOrder?.selfPickup ? (
+                    <div>
+                      <h3 className="font-medium mb-2">Ongkir (Actual)</h3>
+                      <Input
+                        type="text"
+                        placeholder="Rp 0"
+                        value={form.ongkirActual}
+                        onChange={(e) => {
+                          const value = e.target.value.replace(/[^\d]/g, "");
+                          const formatted = value ? `Rp ${parseInt(value).toLocaleString("id-ID")}` : "";
+                          setForm({ ...form, ongkirActual: formatted });
+                        }}
+                        className="w-full"
+                      />
+                    </div>
+                  ) : null}
                 </div>
               )}
 
