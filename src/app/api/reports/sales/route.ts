@@ -113,7 +113,9 @@ export async function GET(req: NextRequest) {
         actual = order.actPayout ?? 0;
       } else if (isWhatsApp) {
         const extraOngkir = Math.max(0, ongkirDifference);
-        actual = Math.max(0, discountedSubtotal - extraOngkir);
+        const baseTotal = order.totalAmount != null ? order.totalAmount : discountedSubtotal + planOngkirValue;
+        const goodsValue = Math.max(0, baseTotal - planOngkirValue);
+        actual = Math.max(0, goodsValue - extraOngkir);
       } else {
         actual = resolvedActual;
       }

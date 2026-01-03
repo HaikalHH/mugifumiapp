@@ -143,6 +143,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     let subtotal = 0;
     let resolvedItems: Array<{ productId: number; quantity: number; price: number }> = [];
 
+    const existingPriceMap = new Map(existingOrder.items.map((it) => [it.productId, it.price]));
+
     if (isDelivered) {
       // Lock items: use existing order items and their recorded prices
       resolvedItems = existingOrder.items.map(it => ({ productId: it.productId, quantity: it.quantity, price: it.price }));
@@ -157,7 +159,11 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         });
       }, 2, 'order-update-products');
       const productMap = new Map(products.map(p => [p.id, p.price]));
-      resolvedItems = (items || []).map(it => ({ productId: it.productId, quantity: it.quantity, price: productMap.get(it.productId) || 0 }));
+      resolvedItems = (items || []).map(it => ({
+        productId: it.productId,
+        quantity: it.quantity,
+        price: existingPriceMap.get(it.productId) ?? productMap.get(it.productId) ?? 0,
+      }));
       subtotal = resolvedItems.reduce((sum, it) => sum + (it.price * it.quantity), 0);
     }
 
