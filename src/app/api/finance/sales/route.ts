@@ -52,6 +52,7 @@ export async function GET(req: NextRequest) {
           discount: true,
           totalAmount: true,
           actPayout: true,
+          ongkirPlan: true,
           items: {
             select: {
               id: true,
@@ -111,16 +112,25 @@ export async function GET(req: NextRequest) {
       const resolvedActual = order.actPayout != null
         ? order.actPayout
         : (order.totalAmount != null ? order.totalAmount : null);
+      const planOngkirValue = order.ongkirPlan || 0;
 
       // For orders, actual received is actPayout if available, otherwise totalAmount
       // For Free outlet, set to 0
       // For Cafe outlet, if no actPayout, set to 0
-      // For WhatsApp, subtract ongkir difference even if actPayout is filled
-      const actual = isFree ? 0 : 
-        (isCafe ? (order.actPayout ?? 0) : 
-        (isWhatsApp
-          ? (resolvedActual != null ? Math.max(0, resolvedActual - ongkirDifference) : null)
-          : resolvedActual));
+      // For WhatsApp, use goods value (after discount) and subtract only excess ongkir
+      let actual: number | null;
+      if (isFree) {
+        actual = 0;
+      } else if (isCafe) {
+        actual = order.actPayout ?? 0;
+      } else if (isWhatsApp) {
+        const extraOngkir = Math.max(0, ongkirDifference);
+        const baseTotal = order.totalAmount != null ? order.totalAmount : discountedSubtotal + planOngkirValue;
+        const goodsValue = Math.max(0, baseTotal - planOngkirValue);
+        actual = Math.max(0, goodsValue - extraOngkir);
+      } else {
+        actual = resolvedActual;
+      }
 
       // Potongan calculation for orders:
       // - Free: 100% (all is potongan since actual is 0)
