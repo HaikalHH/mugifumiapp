@@ -43,6 +43,62 @@ function normalizeAmount(value: number | null | undefined): number {
   return value;
 }
 
+function needsDiscount(outlet: string) {
+  const key = outlet.toLowerCase();
+  return key === "whatsapp" || key === "cafe" || key === "wholesale";
+}
+
+function computeActualAmount(order: {
+  outlet: string;
+  discount?: number | null;
+  totalAmount?: number | null;
+  actPayout?: number | null;
+  ongkirPlan?: number | null;
+  items?: Array<{ price: number; quantity: number }>;
+  deliveries?: Array<{ ongkirPlan: number | null; ongkirActual: number | null; status: string }>;
+}) {
+  const orderItems = order.items || [];
+  const preDiscountSubtotal = orderItems.reduce((sum, item) => sum + (item.price * (item.quantity || 0)), 0);
+  const outletKey = order.outlet.toLowerCase();
+  const isFree = outletKey === "free";
+  const isCafe = outletKey === "cafe";
+  const isWhatsApp = outletKey === "whatsapp";
+  const discountPct = needsDiscount(order.outlet) && typeof order.discount === "number" ? order.discount : 0;
+  const discountedSubtotal = Math.round(preDiscountSubtotal * (1 - (discountPct || 0) / 100));
+  const planOngkirValue = order.ongkirPlan || 0;
+
+  let ongkirDifference = 0;
+  if (isWhatsApp && order.deliveries && order.deliveries.length > 0) {
+    for (const delivery of order.deliveries) {
+      if (delivery.ongkirPlan && delivery.ongkirActual && delivery.status === "delivered") {
+        const diff = delivery.ongkirActual - delivery.ongkirPlan;
+        if (diff > 0) {
+          ongkirDifference += diff;
+        }
+      }
+    }
+  }
+
+  const resolvedActual = order.actPayout != null
+    ? order.actPayout
+    : (order.totalAmount != null ? order.totalAmount : null);
+
+  let actualAmount = 0;
+  if (isFree) {
+    actualAmount = 0;
+  } else if (isCafe) {
+    actualAmount = order.actPayout ?? 0;
+  } else if (isWhatsApp) {
+    const baseTotal = order.totalAmount != null ? order.totalAmount : discountedSubtotal + planOngkirValue;
+    const goodsValue = Math.max(0, baseTotal - planOngkirValue);
+    actualAmount = Math.max(0, goodsValue - Math.max(0, ongkirDifference));
+  } else {
+    actualAmount = resolvedActual ?? 0;
+  }
+
+  return actualAmount;
+}
+
 function mapWeek(
   week: { id: number; name: string; month: number; year: number; startDate: Date; endDate: Date } | null,
 ) {
@@ -69,8 +125,10 @@ async function computeActualRevenue(startDate: Date, endDate: Date) {
     select: {
       outlet: true,
       status: true,
+      discount: true,
       actPayout: true,
       totalAmount: true,
+      ongkirPlan: true,
       items: { select: { price: true, quantity: true } },
       deliveries: { select: { ongkirPlan: true, ongkirActual: true, status: true } },
     },
@@ -78,40 +136,7 @@ async function computeActualRevenue(startDate: Date, endDate: Date) {
 
   let total = 0;
   for (const order of orders) {
-    const outletLower = order.outlet.toLowerCase();
-    const isFree = outletLower === "free";
-    const isCafe = outletLower === "cafe";
-    const isWhatsApp = outletLower === "whatsapp";
-
-    // Pre-discount subtotal in case totalAmount is missing
-    const preDiscountSubtotal = order.items.reduce((sum, item) => sum + (item.price * (item.quantity || 0)), 0);
-    const totalAmount = order.totalAmount || preDiscountSubtotal;
-
-    // Calculate ongkir difference for WhatsApp
-    let ongkirDifference = 0;
-    if (isWhatsApp && order.deliveries && order.deliveries.length > 0) {
-      for (const delivery of order.deliveries) {
-        if (delivery.ongkirPlan && delivery.ongkirActual && delivery.status === "delivered") {
-          const diff = delivery.ongkirActual - delivery.ongkirPlan;
-          if (diff > 0) {
-            ongkirDifference += diff;
-          }
-        }
-      }
-    }
-
-    const resolvedActual = order.actPayout != null ? order.actPayout : totalAmount;
-
-    // Actual revenue per order mirrors logic in finance metrics/report sales
-    const actual = isFree
-      ? 0
-      : (isCafe
-        ? (order.actPayout ?? 0)
-        : (isWhatsApp
-          ? (resolvedActual != null ? Math.max(0, resolvedActual - ongkirDifference) : 0)
-          : (resolvedActual ?? 0)));
-
-    total += normalizeAmount(actual);
+    total += normalizeAmount(computeActualAmount(order));
   }
 
   return total;

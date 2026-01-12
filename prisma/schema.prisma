@@ -4,40 +4,40 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL") 
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
   directUrl = env("DIRECT_DATABASE_URL")
 }
 
 // Application users and roles
 model User {
-  id           Int      @id @default(autoincrement())
-  username     String   @unique
-  name         String
-  role         String   // Admin | Manager | Sales | Bandung | Jakarta
-  passwordHash String
-  baseSalary   Int      @default(0)
-  workStartMinutes Int  @default(540)  // 09:00 local
-  workEndMinutes   Int  @default(1020) // 17:00 local
+  id                 Int      @id @default(autoincrement())
+  username           String   @unique
+  name               String
+  role               String // Admin | Manager | Sales | Bandung | Jakarta
+  passwordHash       String
+  baseSalary         Int      @default(0)
+  workStartMinutes   Int      @default(540) // 09:00 local
+  workEndMinutes     Int      @default(1020) // 17:00 local
   overtimeHourlyRate Int?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
-  attendances       Attendance[]
-  overtimeRequests  OvertimeRequest[]
-  bonuses           UserBonus[]
-  manualPenalties   ManualPenalty[]
-  payrollSnapshots  PayrollSnapshot[]
+  attendances      Attendance[]
+  overtimeRequests OvertimeRequest[]
+  bonuses          UserBonus[]
+  manualPenalties  ManualPenalty[]
+  payrollSnapshots PayrollSnapshot[]
 }
 
 model Attendance {
-  id         Int      @id @default(autoincrement())
+  id         Int       @id @default(autoincrement())
   userId     Int
   date       DateTime // Jakarta local date anchored at 00:00 UTC
   clockInAt  DateTime
   clockOutAt DateTime?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
   user User @relation(fields: [userId], references: [id])
 
@@ -45,15 +45,15 @@ model Attendance {
 }
 
 model OvertimeRequest {
-  id           Int      @id @default(autoincrement())
+  id           Int       @id @default(autoincrement())
   userId       Int
   startAt      DateTime
   endAt        DateTime
-  status       String   @default("PENDING") // PENDING | APPROVED | REJECTED
+  status       String    @default("PENDING") // PENDING | APPROVED | REJECTED
   approvedById Int?
   approvedAt   DateTime?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   user User @relation(fields: [userId], references: [id])
 
@@ -61,27 +61,35 @@ model OvertimeRequest {
 }
 
 model Product {
-  id            Int             @id @default(autoincrement())
-  code          String          @unique
-  name          String
-  price         Int
-  hppPct        Float
-  hppValue      Int
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
-  inventory     Inventory[]
-  sales         SaleItem[]
-  orderItems    OrderItem[]
-  deliveryItems DeliveryItem[]
-  b2bOrderItems OrderB2BItem[] @relation("OrderB2BItemRetailProduct")
+  id                Int            @id @default(autoincrement())
+  code              String         @unique
+  name              String
+  price             Int
+  description       String?        @db.Text
+  longDescription   String?        @db.Text
+  ingredients       String?        @db.Text
+  allergens         String?        @db.Text
+  badge             String?
+  category          String?
+  showInMarketplace Boolean        @default(true)
+  hppPct            Float
+  hppValue          Int
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  attachments       Media[]
+  inventory         Inventory[]
+  sales             SaleItem[]
+  orderItems        OrderItem[]
+  deliveryItems     DeliveryItem[]
+  b2bOrderItems     OrderB2BItem[] @relation("OrderB2BItemRetailProduct")
 }
 
 // Separate master data for planning helper
 model PlanProduct {
-  id         Int          @id @default(autoincrement())
-  name       String
-  createdAt  DateTime     @default(now())
-  updatedAt  DateTime     @updatedAt
+  id        Int      @id @default(autoincrement())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   recipeItems RecipeItem[]
 }
@@ -94,6 +102,20 @@ model Inventory {
   createdAt DateTime @default(now())
   status    String   @default("READY")
   product   Product  @relation(fields: [productId], references: [id])
+}
+
+model Media {
+  id           Int      @id @default(autoincrement())
+  url          String
+  altText      String?
+  type         String?
+  width        Int?
+  height       Int?
+  displayOrder Int      @default(0)
+  productId    Int?
+  product      Product? @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
 }
 
 model Sale {
@@ -124,25 +146,25 @@ model SaleItem {
 }
 
 model Order {
-  id             Int        @id @default(autoincrement())
-  outlet         String
-  customer       String?
-  status         String     @default("PAID")
-  orderDate      DateTime
-  deliveryDate   DateTime?
-  location       String
-  discount       Float?
-  totalAmount    Int?
-  actPayout      Int?
-  ongkirPlan     Int?
-  selfPickup     Boolean    @default(false)
-  createdAt      DateTime   @default(now())
-  paymentLink    String?
-  midtransOrderId String?
+  id                    Int         @id @default(autoincrement())
+  outlet                String
+  customer              String?
+  status                String      @default("PAID")
+  orderDate             DateTime
+  deliveryDate          DateTime?
+  location              String
+  discount              Float?
+  totalAmount           Int?
+  actPayout             Int?
+  ongkirPlan            Int?
+  selfPickup            Boolean     @default(false)
+  createdAt             DateTime    @default(now())
+  paymentLink           String?
+  midtransOrderId       String?
   midtransTransactionId String?
-  midtransFee    Int?
-  items          OrderItem[]
-  deliveries     Delivery[]
+  midtransFee           Int?
+  items                 OrderItem[]
+  deliveries            Delivery[]
 }
 
 model OrderItem {
@@ -156,37 +178,37 @@ model OrderItem {
 }
 
 model Delivery {
-  id          Int           @id @default(autoincrement())
-  orderId     Int
+  id           Int            @id @default(autoincrement())
+  orderId      Int
   deliveryDate DateTime?
-  status      String        @default("pending") // pending, delivered
-  ongkirPlan  Int?          // Ongkir (Plan) in Rupiah
-  ongkirActual Int?         // Ongkir (Actual) in Rupiah
-  createdAt   DateTime      @default(now())
-  items       DeliveryItem[]
-  order       Order         @relation(fields: [orderId], references: [id])
+  status       String         @default("pending") // pending, delivered
+  ongkirPlan   Int? // Ongkir (Plan) in Rupiah
+  ongkirActual Int? // Ongkir (Actual) in Rupiah
+  createdAt    DateTime       @default(now())
+  items        DeliveryItem[]
+  order        Order          @relation(fields: [orderId], references: [id])
 }
 
 model DeliveryItem {
-  id          Int       @id @default(autoincrement())
-  deliveryId  Int
-  productId   Int
-  barcode     String
-  price       Int
-  product     Product   @relation(fields: [productId], references: [id])
-  delivery    Delivery  @relation(fields: [deliveryId], references: [id])
+  id         Int      @id @default(autoincrement())
+  deliveryId Int
+  productId  Int
+  barcode    String
+  price      Int
+  product    Product  @relation(fields: [productId], references: [id])
+  delivery   Delivery @relation(fields: [deliveryId], references: [id])
 }
 
 // B2B master product table (separate from retail)
 model ProductB2B {
-  id        Int      @id @default(autoincrement())
-  code      String   @unique
+  id        Int            @id @default(autoincrement())
+  code      String         @unique
   name      String
   price     Int
-  hppPct    Float?   @map("hpp_pct")
-  hppValue  Int?     @map("hpp_value")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  hppPct    Float?         @map("hpp_pct")
+  hppValue  Int?           @map("hpp_value")
+  createdAt DateTime       @default(now()) @map("created_at")
+  updatedAt DateTime       @updatedAt @map("updated_at")
   items     OrderB2BItem[]
 
   @@map("product_b2b")
@@ -211,17 +233,17 @@ model OrderB2B {
 
 // B2B order items
 model OrderB2BItem {
-  id              Int          @id @default(autoincrement())
-  orderId         Int          @map("order_id")
-  productId       Int?         @map("product_id")
-  retailProductId Int?         @map("retail_product_id")
-  productSource   String       @default("B2B") @map("product_source")
+  id              Int         @id @default(autoincrement())
+  orderId         Int         @map("order_id")
+  productId       Int?        @map("product_id")
+  retailProductId Int?        @map("retail_product_id")
+  productSource   String      @default("B2B") @map("product_source")
   barcode         String?
   quantity        Int
   price           Int
-  product         ProductB2B?  @relation(fields: [productId], references: [id])
-  retailProduct   Product?     @relation("OrderB2BItemRetailProduct", fields: [retailProductId], references: [id])
-  order           OrderB2B     @relation(fields: [orderId], references: [id])
+  product         ProductB2B? @relation(fields: [productId], references: [id])
+  retailProduct   Product?    @relation("OrderB2BItemRetailProduct", fields: [retailProductId], references: [id])
+  order           OrderB2B    @relation(fields: [orderId], references: [id])
 
   @@map("order_b2b_item")
 }
@@ -241,28 +263,28 @@ model ManualPenalty {
 
 // Ingredient master data (bahan)
 model Ingredient {
-  id        Int          @id @default(autoincrement())
-  code      String       @unique
+  id        Int      @id @default(autoincrement())
+  code      String   @unique
   name      String
-  unit      String       // gram | liter
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
+  unit      String // gram | liter
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   recipeItems RecipeItem[]
 }
 
 // Recipe item per product per 1 kg output
 model RecipeItem {
-  id            Int        @id @default(autoincrement())
-  productId     Int
-  ingredientId  Int
-  amountPerKg   Float      // amount needed per 1 kg of product
-  unit          String     // duplicate for clarity, e.g. gram | liter
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
+  id           Int      @id @default(autoincrement())
+  productId    Int
+  ingredientId Int
+  amountPerKg  Float // amount needed per 1 kg of product
+  unit         String // duplicate for clarity, e.g. gram | liter
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  product     PlanProduct @relation(fields: [productId], references: [id])
-  ingredient  Ingredient @relation(fields: [ingredientId], references: [id])
+  product    PlanProduct @relation(fields: [productId], references: [id])
+  ingredient Ingredient  @relation(fields: [ingredientId], references: [id])
 
   @@unique([productId, ingredientId])
   @@index([productId])
@@ -292,20 +314,20 @@ model FinanceWeek {
 }
 
 model FinancePeriod {
-  id        Int                 @id @default(autoincrement())
+  id        Int                  @id @default(autoincrement())
   name      String
   month     Int
   year      Int
   startDate DateTime
   endDate   DateTime
   weekId    Int?
-  createdAt DateTime            @default(now())
-  updatedAt DateTime            @updatedAt
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
   plans     FinancePlanEntry[]
   actuals   FinanceActualEntry[]
   debts     FinanceDebtPayment[]
 
-  week      FinanceWeek?        @relation(fields: [weekId], references: [id], onDelete: SetNull)
+  week FinanceWeek? @relation(fields: [weekId], references: [id], onDelete: SetNull)
 
   @@index([weekId])
 }
@@ -319,7 +341,7 @@ model FinancePlanEntry {
   createdAt DateTime        @default(now())
   updatedAt DateTime        @updatedAt
 
-  period    FinancePeriod   @relation(fields: [periodId], references: [id], onDelete: Cascade)
+  period FinancePeriod @relation(fields: [periodId], references: [id], onDelete: Cascade)
 
   @@index([periodId, category])
 }
@@ -333,22 +355,22 @@ model FinanceActualEntry {
   createdAt DateTime        @default(now())
   updatedAt DateTime        @updatedAt
 
-  period    FinancePeriod   @relation(fields: [periodId], references: [id], onDelete: Cascade)
+  period FinancePeriod @relation(fields: [periodId], references: [id], onDelete: Cascade)
 
   @@index([periodId, category])
 }
 
 // Record of debt repayments (terms) for each finance period/week
 model FinanceDebtPayment {
-  id        Int            @id @default(autoincrement())
+  id        Int      @id @default(autoincrement())
   periodId  Int
-  term      Int            // 1-based term number per period
-  amount    Int            // Rupiah
+  term      Int // 1-based term number per period
+  amount    Int // Rupiah
   note      String?
-  createdAt DateTime       @default(now())
-  updatedAt DateTime       @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  period    FinancePeriod  @relation(fields: [periodId], references: [id], onDelete: Cascade)
+  period FinancePeriod @relation(fields: [periodId], references: [id], onDelete: Cascade)
 
   @@index([periodId])
 }
@@ -358,13 +380,13 @@ model UserBonus {
   id        Int      @id @default(autoincrement())
   userId    Int
   year      Int
-  month     Int       // 1..12
+  month     Int // 1..12
   amount    Int
   note      String?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, year, month])
 }
@@ -373,11 +395,11 @@ model PayrollSnapshot {
   id          Int      @id @default(autoincrement())
   userId      Int
   year        Int
-  month       Int       // 1..12
-  baseSalary  Int       @default(0)
-  hourlyRate  Int       @default(0)
-  penaltyRate Int       @default(0)
-  createdAt   DateTime  @default(now())
+  month       Int // 1..12
+  baseSalary  Int      @default(0)
+  hourlyRate  Int      @default(0)
+  penaltyRate Int      @default(0)
+  createdAt   DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 

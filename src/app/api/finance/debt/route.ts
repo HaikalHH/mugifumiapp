@@ -15,6 +15,69 @@ type SummaryRow = {
   remaining: number;
 };
 
+function normalizeOrderStatus(rawStatus?: string | null): "PAID" | "NOT PAID" {
+  if (!rawStatus) return "PAID";
+  const normalized = String(rawStatus).trim().toUpperCase();
+  if (normalized === "NOT PAID" || normalized === "NOT_PAID") return "NOT PAID";
+  return "PAID";
+}
+
+function needsDiscount(outlet: string) {
+  const key = outlet.toLowerCase();
+  return key === "whatsapp" || key === "cafe" || key === "wholesale";
+}
+
+function computeActualAmount(order: {
+  outlet: string;
+  discount?: number | null;
+  totalAmount?: number | null;
+  actPayout?: number | null;
+  ongkirPlan?: number | null;
+  items?: Array<{ price: number; quantity: number }>;
+  deliveries?: Array<{ ongkirPlan: number | null; ongkirActual: number | null; status: string }>;
+}) {
+  const orderItems = order.items || [];
+  const preDiscountSubtotal = orderItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+  const outletKey = order.outlet.toLowerCase();
+  const isFree = outletKey === "free";
+  const isCafe = outletKey === "cafe";
+  const isWhatsApp = outletKey === "whatsapp";
+  const discountPct = needsDiscount(order.outlet) && typeof order.discount === "number" ? order.discount : 0;
+  const discountedSubtotal = Math.round(preDiscountSubtotal * (1 - (discountPct || 0) / 100));
+  const planOngkirValue = order.ongkirPlan || 0;
+
+  let ongkirDifference = 0;
+  if (isWhatsApp && order.deliveries && order.deliveries.length > 0) {
+    for (const delivery of order.deliveries) {
+      if (delivery.ongkirPlan && delivery.ongkirActual && delivery.status === "delivered") {
+        const diff = delivery.ongkirActual - delivery.ongkirPlan;
+        if (diff > 0) {
+          ongkirDifference += diff;
+        }
+      }
+    }
+  }
+
+  const resolvedActual = order.actPayout != null
+    ? order.actPayout
+    : (order.totalAmount != null ? order.totalAmount : null);
+
+  let actualAmount = 0;
+  if (isFree) {
+    actualAmount = 0;
+  } else if (isCafe) {
+    actualAmount = order.actPayout ?? 0;
+  } else if (isWhatsApp) {
+    const baseTotal = order.totalAmount != null ? order.totalAmount : discountedSubtotal + planOngkirValue;
+    const goodsValue = Math.max(0, baseTotal - planOngkirValue);
+    actualAmount = Math.max(0, goodsValue - Math.max(0, ongkirDifference));
+  } else {
+    actualAmount = resolvedActual ?? 0;
+  }
+
+  return actualAmount;
+}
+
 // Compute Total Omset Diterima (PAID) for a given date range using same logic as metrics route
 async function computeTotalOmsetPaid(from: Date, to: Date): Promise<number> {
   const orders = await withRetry(async () => {
@@ -24,8 +87,10 @@ async function computeTotalOmsetPaid(from: Date, to: Date): Promise<number> {
         outlet: true,
         status: true,
         customer: true,
+        discount: true,
         actPayout: true,
         totalAmount: true,
+        ongkirPlan: true,
         items: { select: { price: true, quantity: true } },
         deliveries: { select: { ongkirPlan: true, ongkirActual: true, status: true } },
       },
@@ -34,33 +99,12 @@ async function computeTotalOmsetPaid(from: Date, to: Date): Promise<number> {
 
   let totalOmsetPaid = 0;
   for (const order of orders) {
-    const orderItems = (order.items || []) as Array<{ price: number; quantity: number }>;
-    const preDiscountSubtotal = orderItems.reduce((acc: number, item) => acc + (item.price * item.quantity), 0);
-    const totalAmount = order.totalAmount || preDiscountSubtotal;
-
-    const isWhatsApp = order.outlet.toLowerCase() === "whatsapp";
-    let ongkirDifference = 0;
-    let hasProcessedDelivery = false;
-    if (isWhatsApp && order.deliveries && order.deliveries.length > 0) {
-      hasProcessedDelivery = true;
-      for (const delivery of order.deliveries) {
-        if (delivery.ongkirPlan && delivery.ongkirActual && delivery.status === "delivered") {
-          const diff = delivery.ongkirActual - delivery.ongkirPlan;
-          if (diff > 0) ongkirDifference += diff;
-        }
-      }
+    if (normalizeOrderStatus(order.status) === "NOT PAID") {
+      continue;
     }
-
-    const shouldInclude =
-      (order.actPayout !== null && order.actPayout !== undefined && order.status !== "NOT PAID") ||
-      (hasProcessedDelivery && order.status !== "NOT PAID");
-
-    if (shouldInclude) {
-      const resolvedActual = order.actPayout != null ? order.actPayout : totalAmount;
-      const actualAmount = isWhatsApp && hasProcessedDelivery
-        ? (resolvedActual != null ? Math.max(0, resolvedActual - ongkirDifference) : 0)
-        : (order.actPayout ?? 0);
-      if (actualAmount > 0) totalOmsetPaid += actualAmount;
+    const actualAmount = computeActualAmount(order);
+    if (actualAmount > 0) {
+      totalOmsetPaid += actualAmount;
     }
   }
 
