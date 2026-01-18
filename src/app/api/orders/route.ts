@@ -165,7 +165,9 @@ export async function POST(req: NextRequest) {
       selfPickup?: boolean;
     };
 
-    if (!outlet || !location) {
+    const normalizedLocation = String(location || "").trim();
+
+    if (!outlet || !normalizedLocation) {
       return NextResponse.json({ error: "outlet and location are required" }, { status: 400 });
     }
     if (!orderDate) {
@@ -243,7 +245,7 @@ export async function POST(req: NextRequest) {
             status: normalizedStatus,
             orderDate: new Date(orderDate),
             deliveryDate: new Date(deliveryDate),
-            location,
+            location: normalizedLocation,
             discount: typeof discount === "number" && Number.isFinite(discount) ? discount : null,
             totalAmount,
             actPayout: normalizedActPayout,

@@ -184,6 +184,8 @@ export async function POST(req: NextRequest) {
           throw new Error("Order not found");
         }
 
+        const orderLocation = (order.location || "").trim() || order.location || "";
+
         const orderItemMap = new Map<
           number,
           {
@@ -225,7 +227,7 @@ export async function POST(req: NextRequest) {
               where: {
                 productId,
                 status: "READY",
-                location: order.location,
+                location: orderLocation,
               },
             });
             if (available < quantity) {
@@ -272,7 +274,7 @@ export async function POST(req: NextRequest) {
               where: {
                 productId,
                 status: "READY",
-                location: order.location,
+                location: orderLocation,
               },
               select: {
                 id: true,
@@ -451,10 +453,11 @@ export async function POST(req: NextRequest) {
           const planValue = created.ongkirPlan || 0;
           const costDifference = ongkirActual - planValue;
           const costDifferencePercent = planValue > 0 ? (costDifference / planValue) * 100 : 0;
+          const notificationLocation = (orderDetails.location || "").trim() || orderDetails.location || "-";
 
           const notificationData: DeliveryNotificationData = {
             outlet: orderDetails.outlet,
-            location: orderDetails.location,
+            location: notificationLocation,
             customer: orderDetails.customer || "-",
             orderId: orderId,
             deliveryDate: created.deliveryDate?.toISOString() || new Date().toISOString(),
