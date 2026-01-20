@@ -289,6 +289,15 @@ export async function POST(req: NextRequest) {
           name: product.name || product.code || `Product ${product.id}`,
         };
       });
+      const discountValue = subtotal - subtotalAfterDiscount;
+      if (discountValue > 0) {
+        snapItems.push({
+          id: "DISCOUNT",
+          price: -discountValue,
+          quantity: 1,
+          name: "Discount",
+        });
+      }
       if (ongkirValue > 0) {
         snapItems.push({
           id: "ONGKIR",

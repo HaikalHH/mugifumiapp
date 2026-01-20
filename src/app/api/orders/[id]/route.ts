@@ -174,6 +174,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       ? Math.round(subtotal * (1 - discount / 100))
       : subtotal;
     const totalAmount = afterDiscount + ongkirValue;
+    const discountValue = subtotal - afterDiscount;
 
     let shouldRegenerateSnap = false;
     if (isWhatsAppOutlet && !isDelivered) {
@@ -256,6 +257,14 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
             name: product?.name || product?.code || `Product ${item.productId}`,
           };
         });
+        if (discountValue > 0) {
+          snapItems.push({
+            id: "DISCOUNT",
+            price: -discountValue,
+            quantity: 1,
+            name: "Discount",
+          });
+        }
         if (ongkirValue > 0) {
           snapItems.push({
             id: "ONGKIR",
